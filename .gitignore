@@ -1,0 +1,15 @@
+# 依赖
+node_modules/
+
+# 微信开发者工具本地配置
+project.private.config.json
+
+# 日志与临时文件
+*.log
+.DS_Store
+Thumbs.db
+
+# 本地验证脚本
+verify-*.mjs
+e2e-*.mjs
+shots/
