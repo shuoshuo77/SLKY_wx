@@ -1,12 +1,21 @@
 <script setup>
-import { computed, onMounted, ref } from "vue"
+import { computed, onMounted, ref, watch } from "vue"
 import {
-  ArrowLeft, Bell, Bot, CalendarDays, ChevronRight, CircleUserRound,
-  CloudSun, Flame, Heart, Home, Leaf, LocateFixed, MapPinned, MessageCircle,
-  Mic, Mountain, Search, Send, Settings, SlidersHorizontal, Sparkles,
-  ThermometerSun, Trash2, Trees, UserRound, Wind
+  Bot, Home, Leaf, MapPinned, Mountain, ThermometerSun, Trees, UserRound
 } from "lucide-vue-next"
 import { apiRequest, ensureLogin, currentUser } from "./api"
+import HomePage from "./pages/HomePage.vue"
+import BasesPage from "./pages/BasesPage.vue"
+import DetailPage from "./pages/DetailPage.vue"
+import MapPage from "./pages/MapPage.vue"
+import MonitorPage from "./pages/MonitorPage.vue"
+import AssistantPage from "./pages/AssistantPage.vue"
+import FavoritesPage from "./pages/FavoritesPage.vue"
+import AppointmentsPage from "./pages/AppointmentsPage.vue"
+import HistoryPage from "./pages/HistoryPage.vue"
+import ProfilePage from "./pages/ProfilePage.vue"
+import { usePageNavigation } from "./navigation/usePageNavigation"
+import { useRoute } from "vue-router"
 
 const images = {
   hero: "/assets/images/07-首页轮播-森林.jpg",
@@ -16,7 +25,6 @@ const images = {
   retreat: "/assets/images/02-山地康养度假.jpg"
 }
 
-const page = ref("home")
 const bases = ref([])
 const hotBases = ref([])
 const mapBases = ref([])
@@ -396,37 +404,45 @@ const filteredBases = computed(() => {
   return bases.value.filter((item) => `${item.name}${item.area}${(item.tags || []).join("")}`.includes(keyword))
 })
 
-function go(target) {
-  page.value = target
-  window.scrollTo({ top: 0, behavior: "smooth" })
-  if (target === "profile") {
-    loadStats()
-    Promise.all([loadFavorites(), loadAppointments(), loadHistory()]).catch(() => {})
-  } else if (target === "favorites") {
-    loadFavorites().catch(() => {})
-  } else if (target === "appointments") {
-    loadAppointments().catch(() => {})
-  } else if (target === "history") {
-    loadHistory().catch(() => {})
-  }
-}
+const { page, go } = usePageNavigation({
+  loadStats,
+  loadFavorites,
+  loadAppointments,
+  loadHistory
+})
+const route = useRoute()
 
-async function openDetail(base) {
-  if (!base || !base.id) return
+async function loadDetailById(id, shouldNavigate = false) {
+  if (!id) return
   try {
-    const detail = await apiRequest(`/bases/${base.id}`)
+    const detail = await apiRequest(`/bases/${id}`)
     const mapped = mapDetail(detail)
     selected.value = mapped
     recordView({ id: mapped.id, name: mapped.name, area: mapped.area, image: mapped.image })
-    go("detail")
+    if (shouldNavigate) go("detail", { id: mapped.id })
   } catch (err) {
     showToast(err.message || "加载基地详情失败")
   }
 }
 
+async function openDetail(base) {
+  if (!base || !base.id) return
+  await loadDetailById(base.id, true)
+}
+
 function openBaseById(id) {
   openDetail(bases.value.find((b) => b.id === id) || { id })
 }
+
+watch(
+  () => [page.value, route.params.id],
+  ([currentPage, id]) => {
+    if (currentPage === "detail" && id && Number(selected.value?.id) !== Number(id)) {
+      loadDetailById(id)
+    }
+  },
+  { immediate: true }
+)
 
 function sendMessage(text = chatText.value) {
   const value = text.trim()
@@ -441,161 +457,84 @@ function sendMessage(text = chatText.value) {
   <div class="stage">
     <div class="phone-shell">
       <main class="app-view">
-        <template v-if="page === 'home'">
-          <header class="brand-bar">
-            <div class="brand"><Trees :size="25"/><strong>森氧康养</strong></div>
-            <div class="header-actions"><Bell :size="19"/><Settings :size="19"/></div>
-          </header>
-
-          <section v-if="loading" class="empty-state">
-            <div class="empty-icon"><Leaf/></div>
-            <h3>正在加载基地数据...</h3><p>从云端拉取最新康养基地</p>
-          </section>
-          <section v-else-if="loadError" class="empty-state">
-            <div class="empty-icon"><MapPinned/></div>
-            <h3>数据加载失败</h3><p>{{ loadError }}</p>
-            <button @click="loadAll">重试</button>
-          </section>
-
-          <template v-else>
-          <section class="hero" :style="{ backgroundImage: `url(${heroImage})` }">
-            <div class="hero-copy"><h1>呼吸自然<br>享受健康生活</h1><p>探索优质康养基地</p></div>
-            <div class="search-box">
-              <Search :size="18"/><input v-model="searchText" placeholder="搜索基地名称、位置、特色..." @keyup.enter="go('bases')"><button @click="go('bases')">搜索</button>
-            </div>
-          </section>
-
-          <section class="service-grid">
-            <button @click="go('bases')"><span><Search/></span><b>基地查询</b></button>
-            <button @click="go('assistant')"><span><Bot/></span><b>智能推荐</b></button>
-            <button @click="go('monitor')"><span><Leaf/></span><b>环境监测</b></button>
-            <button @click="openDetail(hotBases[0] || bases[0])"><span><Sparkles/></span><b>健康指南</b></button>
-          </section>
-
-          <section class="section-block">
-            <div class="section-heading"><h2>热门基地</h2><button @click="go('bases')">更多 <ChevronRight :size="15"/></button></div>
-            <article v-for="base in hotBases.slice(0, 3)" :key="base.id" class="base-row" @click="openDetail(base)">
-              <img :src="base.image" :alt="base.name">
-              <div><h3>{{ base.name }}</h3><div class="tags"><span v-for="tag in base.tags.slice(0, 3)" :key="tag">{{ tag }}</span></div><p><Flame :size="14"/> 热度 {{ base.viewCount }}</p></div>
-              <button class="heart" :class="{ active: isFavorite(base.id) }" @click.stop="toggleFavorite(base)"><Heart :size="20" :fill="isFavorite(base.id) ? 'currentColor' : 'none'"/></button>
-            </article>
-          </section>
-          </template>
-        </template>
-
-        <template v-else-if="page === 'bases'">
-          <header class="page-header"><button @click="go('home')"><ArrowLeft/></button><h1>基地列表</h1><button><SlidersHorizontal/></button></header>
-          <div class="list-search"><Search :size="18"/><input v-model="searchText" placeholder="搜索基地名称或地区"></div>
-          <div class="chip-row"><button class="active">全部</button><button>康养</button><button>徒步</button><button>研学</button><button>生态</button></div>
-          <section class="base-list">
-            <article v-for="base in filteredBases" :key="base.id" class="base-card" @click="openDetail(base)">
-              <img :src="base.image" :alt="base.name">
-              <div class="base-card-content"><h3>{{ base.name }}</h3><p class="muted">{{ base.area }}</p><p class="rating"><Flame :size="14"/> 热度 {{ base.viewCount }}</p><div class="tags"><span v-for="tag in base.tags.slice(0, 3)" :key="tag">{{ tag }}</span></div></div>
-              <button class="heart" :class="{ active: isFavorite(base.id) }" @click.stop="toggleFavorite(base)"><Heart :size="19" :fill="isFavorite(base.id) ? 'currentColor' : 'none'"/></button>
-            </article>
-          </section>
-        </template>
-
-        <template v-else-if="page === 'detail'">
-          <header class="page-header overlay"><button @click="go('bases')"><ArrowLeft/></button><h1>基地详情</h1><button class="heart" :class="{ active: isFavorite(selected.id) }" @click.stop="toggleFavorite(selected)"><Heart :fill="isFavorite(selected.id) ? 'currentColor' : 'none'"/></button></header>
-          <img class="detail-cover" :src="selected.image" :alt="selected.name">
-          <section class="detail-body">
-            <h1>{{ selected.name }}</h1><p class="muted">{{ selected.area }}</p>
-            <div class="tags"><span v-for="tag in selected.tags" :key="tag">{{ tag }}</span></div>
-            <p class="detail-rating"><Flame :size="17"/> <b>{{ selected.viewCount }}</b> 次浏览<em>{{ selected.address }}</em></p>
-            <div class="metric-grid">
-              <div v-for="metric in selected.metrics" :key="metric.label">
-                <component :is="metric.icon" :size="20"/>
-                <small>{{ metric.label }}</small>
-                <b>{{ metric.value }}</b>
-                <span>{{ metric.unit }}</span>
-              </div>
-            </div>
-            <h2>基地介绍</h2><p class="description">{{ selected.desc }}</p>
-            <h2>康养服务</h2><div class="services"><span v-for="service in selected.services" :key="service">{{ service }}</span></div>
-          </section>
-          <div class="action-bar"><button class="ghost" @click="go('map')"><LocateFixed/>导航</button><button class="primary" v-if="activeBooking(selected.id)" @click="go('appointments')">查看预约</button><button class="primary" v-else @click="openBookingSheet">预约参访</button></div>
-        </template>
-
-        <template v-else-if="page === 'map'">
-          <header class="page-header"><button @click="go('home')"><ArrowLeft/></button><h1>地图找基地</h1><button><SlidersHorizontal/></button></header>
-          <section class="map-panel">
-            <div class="map-grid"></div>
-            <button v-for="(base, index) in mapBases.slice(0, 12)" :key="base.id" class="pin" :style="{ left: `${15 + (index % 4) * 24}%`, top: `${22 + Math.floor(index / 4) * 28}%` }" @click="mapSelected = base"><MapPinned/></button>
-          </section>
-          <article v-if="mapSelected" class="map-result" @click="openDetail(mapSelected)"><img :src="mapSelected.image"><div><h3>{{ mapSelected.name }}</h3><p>{{ mapSelected.area }}</p><p>{{ mapSelected.address }}</p></div><ChevronRight/></article>
-          <article v-else class="map-result placeholder"><div><h3>点击地图标记查看基地</h3><p>地图数据来自后端接口</p></div></article>
-        </template>
-
-        <template v-else-if="page === 'monitor'">
-          <header class="page-header"><button @click="go('home')"><ArrowLeft/></button><h1>环境监测</h1><button><Settings/></button></header>
-          <section class="monitor-body"><p class="location"><MapPinned/> 青城山康养基地</p><div class="time-tabs"><b>实时监测</b><span>7天趋势</span><span>30天趋势</span></div><div class="aqi-ring"><small>空气质量</small><strong>优</strong><span>AQI 28</span></div><div class="monitor-list"><p><Leaf/>负氧离子 <b>3200 <small>个/cm³</small></b></p><p><ThermometerSun/>温度 <b>22℃</b></p><p><CloudSun/>湿度 <b>68%</b></p><p><Wind/>PM2.5 <b>12 <small>μg/m³</small></b></p></div><p class="updated">数据更新时间：今天 10:30</p></section>
-        </template>
-
-        <template v-else-if="page === 'assistant'">
-          <header class="page-header"><button @click="go('home')"><ArrowLeft/></button><h1>智能助手</h1><button><Settings/></button></header>
-          <section class="chat-list"><div v-for="(message, index) in messages" :key="index" class="message" :class="message.role"><span v-if="message.role === 'bot'" class="avatar"><Bot/></span><p>{{ message.text }}</p></div><article v-if="hotBases[0]" class="recommend-card" @click="openDetail(hotBases[0])"><img :src="hotBases[0].image"><div><b>{{ hotBases[0].name }}</b><span>{{ hotBases[0].area }}</span><em><Flame :size="13"/> 热度 {{ hotBases[0].viewCount }}</em></div></article></section>
-          <div class="quick-prompts"><button @click="sendMessage('环境怎么样？')">环境怎么样？</button><button @click="sendMessage('附近有什么基地？')">附近有什么基地？</button></div>
-          <div class="chat-composer"><input v-model="chatText" placeholder="输入你的问题..." @keyup.enter="sendMessage()"><Mic/><button @click="sendMessage()"><Send/></button></div>
-        </template>
-
-        <template v-else-if="page === 'favorites'">
-          <header class="page-header"><button @click="go('profile')"><ArrowLeft/></button><h1>我的收藏</h1><button></button></header>
-          <section v-if="favoriteBases.length" class="base-list">
-            <article v-for="base in favoriteBases" :key="base.id" class="base-card" @click="openDetail(base)">
-              <img :src="base.image" :alt="base.name">
-              <div class="base-card-content"><h3>{{ base.name }}</h3><p class="muted">{{ base.area }}</p><p class="rating"><Flame :size="14"/> 热度 {{ base.viewCount }}</p><div class="tags"><span v-for="tag in base.tags.slice(0, 3)" :key="tag">{{ tag }}</span></div></div>
-              <button class="heart active" @click.stop="toggleFavorite(base)"><Heart :size="19" fill="currentColor"/></button>
-            </article>
-          </section>
-          <section v-else class="empty-state">
-            <div class="empty-icon"><Heart/></div>
-            <h3>还没有收藏</h3><p>在基地卡片上点一下小心心，喜欢的基地就会收藏到这里</p>
-            <button @click="go('bases')">去逛逛</button>
-          </section>
-        </template>
-
-        <template v-else-if="page === 'appointments'">
-          <header class="page-header"><button @click="go('profile')"><ArrowLeft/></button><h1>我的预约</h1><button @click="go('bases')">去预约</button></header>
-          <section v-if="appointments.length" class="record-list">
-            <article v-for="item in sortedAppointments" :key="item.id" class="appoint-card" @click="openBaseById(item.baseId)">
-              <img :src="item.baseImage" :alt="item.baseName">
-              <div><h3>{{ item.baseName }}</h3><p><CalendarDays :size="14"/> {{ item.date }} · {{ item.time }}</p><p><UserRound :size="14"/> {{ item.people }}人 · {{ item.name }}</p></div>
-              <div class="appoint-side">
-                <span class="status" :class="item.status">{{ item.status }}</span>
-                <button v-if="item.status !== '已取消'" @click.stop="cancelAppointment(item)">取消预约</button>
-              </div>
-            </article>
-          </section>
-          <section v-else class="empty-state">
-            <div class="empty-icon"><CalendarDays/></div>
-            <h3>还没有预约</h3><p>挑选一个心仪的康养基地，预约属于你的自然之旅</p>
-            <button @click="go('bases')">去预约</button>
-          </section>
-        </template>
-
-        <template v-else-if="page === 'history'">
-          <header class="page-header"><button @click="go('profile')"><ArrowLeft/></button><h1>浏览记录</h1><button v-if="history.length" @click="clearHistory"><Trash2/></button><button v-else></button></header>
-          <section v-if="history.length" class="record-list">
-            <article v-for="item in history" :key="item.id" class="history-row" @click="openBaseById(item.id)">
-              <img :src="item.image" :alt="item.name">
-              <div><h3>{{ item.name }}</h3><p>{{ item.area }}</p></div>
-              <span class="history-time">{{ timeText(item.ts) }}</span>
-            </article>
-          </section>
-          <section v-else class="empty-state">
-            <div class="empty-icon"><MapPinned/></div>
-            <h3>还没有浏览记录</h3><p>去逛逛基地，最近看过的基地会出现在这里</p>
-            <button @click="go('bases')">去逛逛</button>
-          </section>
-        </template>
-
-        <template v-else-if="page === 'profile'">
-          <header class="profile-head"><div class="profile-avatar"><UserRound/></div><div><h1>{{ profileUser.real_name || profileUser.username || '森林爱好者' }}</h1><p>ID: {{ profileUser.id || '游客' }}</p></div><Bell/><Settings/></header>
-          <section class="profile-stats"><div class="stat-cell" @click="go('favorites')"><b>{{ stats.favorites }}</b><span>我的收藏</span></div><div class="stat-cell" @click="go('appointments')"><b>{{ stats.appointments }}</b><span>我的预约</span></div><div class="stat-cell" @click="go('history')"><b>{{ stats.history }}</b><span>浏览记录</span></div></section>
-          <section class="profile-menu"><h2>我的服务</h2><div class="menu-grid"><button @click="go('favorites')"><Heart/><span>我的收藏</span></button><button @click="go('appointments')"><CalendarDays/><span>我的预约</span></button><button @click="go('history')"><MapPinned/><span>浏览记录</span></button><button><MessageCircle/><span>我的评价</span></button></div></section>
-          <section class="settings-list"><button><Bell/>消息通知<ChevronRight/></button><button><MessageCircle/>意见反馈<ChevronRight/></button><button><CircleUserRound/>关于我们<ChevronRight/></button><button><Settings/>设置<ChevronRight/></button></section>
-        </template>
+        <HomePage
+          v-if="page === 'home'"
+          v-model:search-text="searchText"
+          :loading="loading"
+          :load-error="loadError"
+          :hero-image="heroImage"
+          :hot-bases="hotBases"
+          :bases="bases"
+          :is-favorite="isFavorite"
+          @load-all="loadAll"
+          @go="go"
+          @open-detail="openDetail"
+          @toggle-favorite="toggleFavorite"
+        />
+        <BasesPage
+          v-else-if="page === 'bases'"
+          v-model:search-text="searchText"
+          :filtered-bases="filteredBases"
+          :is-favorite="isFavorite"
+          @go="go"
+          @open-detail="openDetail"
+          @toggle-favorite="toggleFavorite"
+        />
+        <DetailPage
+          v-else-if="page === 'detail' && selected"
+          :selected="selected"
+          :is-favorite="isFavorite"
+          :active-booking="activeBooking"
+          @go="go"
+          @toggle-favorite="toggleFavorite"
+          @open-booking-sheet="openBookingSheet"
+        />
+        <MapPage
+          v-else-if="page === 'map'"
+          v-model:map-selected="mapSelected"
+          :map-bases="mapBases"
+          @go="go"
+          @open-detail="openDetail"
+        />
+        <MonitorPage v-else-if="page === 'monitor'" @go="go" />
+        <AssistantPage
+          v-else-if="page === 'assistant'"
+          v-model:chat-text="chatText"
+          :messages="messages"
+          :hot-bases="hotBases"
+          @go="go"
+          @open-detail="openDetail"
+          @send-message="sendMessage"
+        />
+        <FavoritesPage
+          v-else-if="page === 'favorites'"
+          :favorite-bases="favoriteBases"
+          @go="go"
+          @open-detail="openDetail"
+          @toggle-favorite="toggleFavorite"
+        />
+        <AppointmentsPage
+          v-else-if="page === 'appointments'"
+          :appointments="appointments"
+          :sorted-appointments="sortedAppointments"
+          @go="go"
+          @open-base-by-id="openBaseById"
+          @cancel-appointment="cancelAppointment"
+        />
+        <HistoryPage
+          v-else-if="page === 'history'"
+          :history="history"
+          :time-text="timeText"
+          @go="go"
+          @clear-history="clearHistory"
+          @open-base-by-id="openBaseById"
+        />
+        <ProfilePage
+          v-else-if="page === 'profile'"
+          :profile-user="profileUser"
+          :stats="stats"
+          @go="go"
+        />
       </main>
 
       <div v-if="showBooking" class="sheet-mask" @click.self="showBooking = false">
