@@ -42,7 +42,7 @@ button{cursor:pointer}
 .heart.active{color:#ef4b7c;background:rgba(239,75,124,.09)}
 .base-card .heart{top:10px;right:6px}
 .page-header .heart{position:static;background:none}
-.bottom-nav{position:absolute;bottom:0;left:0;right:0;height:76px;background:rgba(255,255,255,.96);border-top:1px solid #e7eee9;display:grid;grid-template-columns:repeat(4,1fr);z-index:5;padding-bottom:8px}
+.bottom-nav{position:fixed;bottom:0;left:50%;width:min(100%,430px);height:76px;transform:translateX(-50%);background:rgba(255,255,255,.96);border-top:1px solid #e7eee9;display:grid;grid-template-columns:repeat(4,1fr);z-index:50;padding-bottom:8px}
 .bottom-nav button{border:0;background:none;color:#6b7a72;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px}
 .bottom-nav svg{width:21px}
 .bottom-nav .active{color:#079d4d;font-weight:700}
@@ -186,5 +186,6 @@ button{cursor:pointer}
 @media (max-width:480px){.stage{padding:0}
 .phone-shell{width:100%;min-height:100vh;border-radius:0;border:0}
 .app-view{min-height:100vh}
+.bottom-nav{width:100%}
 .map-panel{height:calc(100vh - 138px)}
 }

@@ -40,7 +40,7 @@ const favorites = ref([])
 const history = ref([])
 const appointments = ref([])
 const stats = ref({ favorites: 0, appointments: 0, history: 0 })
-const profileUser = ref(currentUser())
+const profileUser = ref(currentUser() || {})
 const toast = ref("")
 let toastTimer = null
 
@@ -52,7 +52,7 @@ function showToast(text) {
 
 async function withAuth(fn) {
   await ensureLogin()
-  profileUser.value = currentUser()
+  profileUser.value = currentUser() || {}
   try {
     return await fn()
   } catch (err) {
@@ -286,6 +286,7 @@ function mapCard(item) {
     id: item.id,
     name: item.name,
     area: areaText(item),
+    address: item.address || "",
     image: item.primary_image || item.base_image || item.image || fallbackImage(item.id),
     tags: parseTags(item),
     viewCount: item.view_count || 0,
@@ -360,22 +361,10 @@ async function loadAll() {
   loading.value = true
   loadError.value = ""
   try {
-    const [homeData, mapData] = await Promise.all([
-      apiRequest("/miniapp/home?limit=10"),
-      apiRequest("/map/bases?limit=200")
-    ])
-    if (homeData.banners?.length) {
-      heroImage.value = homeData.banners[0].image_url || images.hero
-    }
-    hotBases.value = (homeData.hot_bases || []).map(mapCard)
-    mapBases.value = (mapData.items || []).map((item) => ({
-      id: item.id,
-      name: item.name,
-      area: areaText(item),
-      address: item.address || "",
-      image: item.primary_image || fallbackImage(item.id)
-    }))
-    bases.value = await loadAllBases()
+    const allBases = await loadAllBases()
+    bases.value = allBases
+    hotBases.value = allBases.slice(0, 10)
+    mapBases.value = allBases.slice(0, 200)
   } catch (err) {
     loadError.value = err.message || "数据加载失败，请确认后端已启动"
   } finally {
