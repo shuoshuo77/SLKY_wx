@@ -103,6 +103,8 @@ button{cursor:pointer}
 .message.bot p{background:#fff}
 .message.user{justify-content:flex-end}
 .message.user p{background:#0ba150;color:#fff}
+.message.loading p{display:flex;align-items:center;gap:6px;color:#6b7972}
+.message.loading svg{width:15px;animation:spin .9s linear infinite}
 .avatar{width:34px;height:34px;border-radius:50%;background:#e2f3ff;color:#2477c8;display:grid;place-items:center;flex:0 0 auto}
 .avatar svg{width:20px}
 .recommend-card{background:#fff;padding:8px;margin:8px 0 0 42px;display:flex;gap:9px;border-radius:7px;box-shadow:0 4px 14px rgba(24,68,47,.08)}
@@ -115,7 +117,10 @@ button{cursor:pointer}
 .chat-composer{position:absolute;bottom:76px;left:0;right:0;height:48px;background:#fff;display:flex;align-items:center;gap:8px;padding:6px 12px}
 .chat-composer input{background:#f2f4f3;border-radius:18px;padding:9px 13px}
 .chat-composer button{width:33px;height:33px;border:0;border-radius:50%;background:#08a04e;color:#fff;display:grid;place-items:center}
+.chat-composer button:disabled{opacity:.45;cursor:not-allowed}
 .chat-composer svg{width:19px}
+.chat-error{margin:12px 42px 0;color:#c14b4b;background:#fff3f3;border:1px solid #ffdada;border-radius:7px;padding:9px 11px;font-size:12px;line-height:1.5}
+@keyframes spin{to{transform:rotate(360deg)}}
 .profile-head{padding:28px 17px 21px;background:linear-gradient(120deg,#e5f7ec,#f8fbf9);display:grid;grid-template-columns:54px 1fr 24px 24px;gap:10px;align-items:center}
 .profile-avatar{width:54px;height:54px;border-radius:50%;background:#42b875;color:#fff;display:grid;place-items:center}
 .profile-head h1{font-size:18px;margin:0 0 5px}

@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue"
 import {
   Bot, Home, Leaf, MapPinned, Mountain, ThermometerSun, Trees, UserRound
 } from "lucide-vue-next"
-import { apiRequest, ensureLogin, currentUser } from "./api"
+import { apiRequest, ensureLogin, currentUser, cozeChat } from "./api"
 import HomePage from "./pages/HomePage.vue"
 import BasesPage from "./pages/BasesPage.vue"
 import DetailPage from "./pages/DetailPage.vue"
@@ -37,10 +37,11 @@ const loadError = ref("")
 const ready = computed(() => !loading.value && !loadError.value)
 const searchText = ref("")
 const chatText = ref("")
+const assistantConversationId = ref("")
+const assistantSending = ref(false)
+const assistantError = ref("")
 const messages = ref([
-  { role: "bot", text: "你好！我是森氧康养智能助手，很高兴为你服务。" },
-  { role: "user", text: "推荐适合夏季避暑的基地" },
-  { role: "bot", text: "为你推荐青城山康养基地和庐山康养基地，它们气温舒适、空气质量优秀。" }
+  { role: "bot", text: "你好！我是森氧康养智能助手，很高兴为你服务。" }
 ])
 
 /* ---------- 后端数据：收藏 / 浏览记录 / 预约 ---------- */
@@ -444,12 +445,23 @@ watch(
   { immediate: true }
 )
 
-function sendMessage(text = chatText.value) {
+async function sendMessage(text = chatText.value) {
   const value = text.trim()
-  if (!value) return
+  if (!value || assistantSending.value) return
   messages.value.push({ role: "user", text: value })
   chatText.value = ""
-  setTimeout(() => messages.value.push({ role: "bot", text: "根据你的需求，青城山康养基地匹配度最高。空气质量优，夏季平均气温舒适，距离也更近。" }), 350)
+  assistantSending.value = true
+  assistantError.value = ""
+  try {
+    const data = await cozeChat(value, { conversationId: assistantConversationId.value })
+    assistantConversationId.value = data.conversation_id || assistantConversationId.value
+    messages.value.push({ role: "bot", text: data.answer || "智能助手暂时没有返回内容。" })
+  } catch (err) {
+    assistantError.value = err.message || "智能助手请求失败"
+    messages.value.push({ role: "bot", text: "智能助手暂时连接失败，请稍后再试。" })
+  } finally {
+    assistantSending.value = false
+  }
 }
 </script>
 
@@ -501,9 +513,9 @@ function sendMessage(text = chatText.value) {
           v-else-if="page === 'assistant'"
           v-model:chat-text="chatText"
           :messages="messages"
-          :hot-bases="hotBases"
+          :is-sending="assistantSending"
+          :error="assistantError"
           @go="go"
-          @open-detail="openDetail"
           @send-message="sendMessage"
         />
         <FavoritesPage
