@@ -8,6 +8,7 @@ project.private.config.json
 *.log
 .DS_Store
 Thumbs.db
+.env
 
 # 本地验证脚本
 verify-*.mjs

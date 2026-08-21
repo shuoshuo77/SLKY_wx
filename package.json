@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev-with-proxy.mjs",
+    "dev:vite": "vite",
+    "assistant-proxy": "node server/dify-proxy.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

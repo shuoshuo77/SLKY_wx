@@ -1,3 +1,7 @@
+// 森氧康养小程序 API 客户端
+// 默认走 Vite 代理（/api -> 后端），需要直连时可在浏览器控制台设置：
+//   localStorage.setItem("syk_api_base", "http://127.0.0.1:8000/api")
+
 const TOKEN_KEY = "syk_token"
 const USER_KEY = "syk_user"
 const STORE_KEY = "syk_mock_store"
@@ -203,126 +207,192 @@ function notFound(path) {
   throw new Error(`本地模拟接口未实现：${path}`)
 }
 
-export async function apiRequest(path, { method = "GET", body } = {}) {
-  const url = new URL(path, "http://local.mock")
+function configuredBaseURL() {
+  const localValue = localStorage.getItem("syk_api_base")
+  const envValue = import.meta.env.VITE_API_BASE_URL
+  return (localValue || envValue || "").replace(/\/+$/, "")
+}
+
+function baseURL() {
+  return configuredBaseURL() || "/api"
+}
+
+function useMockApi() {
+  const configured = configuredBaseURL()
+  return !configured || configured === "mock"
+}
+
+function mockResponse(data) {
+  return Promise.resolve(JSON.parse(JSON.stringify(data)))
+}
+
+async function mockRequest(path, { method = "GET", body } = {}) {
+  const url = new URL(path, "http://mock.local")
   const pathname = url.pathname
+  const requestMethod = method.toUpperCase()
   const store = getStore()
 
-  if (pathname === "/auth/login" || pathname === "/auth/register") {
-    return {
-      access_token: "mock-token",
-      token_type: "bearer",
-      user: mockUser(body?.username)
-    }
-  }
-
-  if (pathname === "/bases" && method === "GET") {
+  if (requestMethod === "GET" && pathname === "/bases") {
     const page = Number(url.searchParams.get("page") || 1)
-    const pageSize = Number(url.searchParams.get("page_size") || mockBases.length)
-    const sorted = [...mockBases].sort((a, b) => b.view_count - a.view_count)
+    const pageSize = Number(url.searchParams.get("page_size") || 20)
+    const items = mockBases.map(publicBase).sort((a, b) => (b.view_count || 0) - (a.view_count || 0))
     const start = (page - 1) * pageSize
-    return {
-      items: sorted.slice(start, start + pageSize).map(publicBase),
-      total: sorted.length,
-      page,
-      page_size: pageSize
-    }
+    return mockResponse({ items: items.slice(start, start + pageSize), total: items.length })
   }
 
   const baseMatch = pathname.match(/^\/bases\/(\d+)$/)
-  if (baseMatch && method === "GET") {
+  if (requestMethod === "GET" && baseMatch) {
     const base = mockBases.find((item) => item.id === Number(baseMatch[1]))
     if (!base) notFound(path)
-    return base
+    return mockResponse(base)
   }
 
-  if (pathname === "/miniapp/me/favorites" && method === "GET") {
-    return { items: store.favorites.map(favoriteItem).filter(Boolean) }
+  if (requestMethod === "POST" && pathname === "/auth/login") {
+    return mockResponse({ access_token: "mock-token", user: mockUser(body?.username) })
+  }
+
+  if (requestMethod === "POST" && pathname === "/auth/register") {
+    return mockResponse({ ok: true, user: mockUser(body?.username) })
+  }
+
+  if (requestMethod === "GET" && pathname === "/miniapp/me/favorites") {
+    return mockResponse({ items: store.favorites.map(favoriteItem).filter(Boolean) })
   }
 
   const favoriteMatch = pathname.match(/^\/miniapp\/me\/favorites\/(\d+)$/)
-  if (favoriteMatch) {
+  if (favoriteMatch && (requestMethod === "PUT" || requestMethod === "DELETE")) {
     const baseId = Number(favoriteMatch[1])
-    if (method === "PUT" && !store.favorites.includes(baseId)) {
-      store.favorites.push(baseId)
-    }
-    if (method === "DELETE") {
-      store.favorites = store.favorites.filter((id) => id !== baseId)
-    }
-    writeStore(store)
-    return { ok: true }
-  }
-
-  if (pathname === "/miniapp/me/history" && method === "GET") {
-    return { items: store.history }
-  }
-
-  if (pathname === "/miniapp/me/history" && method === "DELETE") {
-    store.history = []
-    writeStore(store)
-    return { ok: true }
+    const favorites = new Set(store.favorites)
+    if (requestMethod === "PUT") favorites.add(baseId)
+    else favorites.delete(baseId)
+    writeStore({ ...store, favorites: [...favorites] })
+    return mockResponse({ ok: true })
   }
 
   const viewMatch = pathname.match(/^\/miniapp\/bases\/(\d+)\/view$/)
-  if (viewMatch && method === "POST") {
-    const item = favoriteItem(Number(viewMatch[1]))
-    if (item) {
-      store.history = [
-        { ...item, viewed_at: new Date().toISOString() },
-        ...store.history.filter((historyItem) => historyItem.base_id !== item.base_id)
-      ].slice(0, 50)
-      writeStore(store)
-    }
-    return { ok: true }
+  if (requestMethod === "POST" && viewMatch) {
+    const baseId = Number(viewMatch[1])
+    const history = [
+      { base_id: baseId, viewed_at: new Date().toISOString() },
+      ...store.history.filter((item) => Number(item.base_id) !== baseId)
+    ].slice(0, 50)
+    writeStore({ ...store, history })
+    return mockResponse({ ok: true })
   }
 
-  if (pathname === "/miniapp/me/appointments" && method === "GET") {
-    return { items: store.appointments.map(appointmentView) }
+  if (requestMethod === "GET" && pathname === "/miniapp/me/history") {
+    const items = store.history
+      .map((item) => ({ ...favoriteItem(item.base_id), viewed_at: item.viewed_at }))
+      .filter((item) => item.base_id)
+    return mockResponse({ items })
   }
 
-  if (pathname === "/miniapp/me/appointments" && method === "POST") {
+  if (requestMethod === "DELETE" && pathname === "/miniapp/me/history") {
+    writeStore({ ...store, history: [] })
+    return mockResponse({ ok: true })
+  }
+
+  if (requestMethod === "GET" && pathname === "/miniapp/me/appointments") {
+    return mockResponse({ items: store.appointments.map(appointmentView) })
+  }
+
+  if (requestMethod === "POST" && pathname === "/miniapp/me/appointments") {
     const item = {
       id: Date.now(),
+      base_id: Number(body.base_id),
+      visit_date: body.visit_date,
+      time_slot: body.time_slot,
+      people_count: body.people_count,
+      contact_name: body.contact_name,
+      contact_phone: body.contact_phone,
       status: "pending",
-      created_at: new Date().toISOString(),
-      ...body
+      created_at: new Date().toISOString()
     }
-    store.appointments.unshift(item)
-    writeStore(store)
-    return appointmentView(item)
+    const appointments = [item, ...store.appointments]
+    writeStore({ ...store, appointments })
+    return mockResponse(appointmentView(item))
   }
 
   const cancelMatch = pathname.match(/^\/miniapp\/me\/appointments\/(\d+)\/cancel$/)
-  if (cancelMatch && method === "POST") {
-    const item = store.appointments.find((appointment) => appointment.id === Number(cancelMatch[1]))
-    if (!item) notFound(path)
-    item.status = "cancelled"
-    writeStore(store)
-    return appointmentView(item)
+  if (requestMethod === "POST" && cancelMatch) {
+    const appointmentId = Number(cancelMatch[1])
+    const appointments = store.appointments.map((item) =>
+      Number(item.id) === appointmentId ? { ...item, status: "cancelled" } : item
+    )
+    writeStore({ ...store, appointments })
+    const updated = appointments.find((item) => Number(item.id) === appointmentId)
+    return mockResponse(appointmentView(updated))
   }
 
-  if (pathname === "/miniapp/me/stats" && method === "GET") {
-    return {
+  if (requestMethod === "GET" && pathname === "/miniapp/me/stats") {
+    return mockResponse({
       favorites: store.favorites.length,
       appointments: store.appointments.filter((item) => item.status !== "cancelled").length,
       history: store.history.length
-    }
+    })
   }
 
   notFound(path)
 }
 
+export async function apiRequest(path, { method = "GET", body } = {}) {
+  if (useMockApi()) {
+    return mockRequest(path, { method, body })
+  }
+
+  const headers = { "Content-Type": "application/json" }
+  const token = localStorage.getItem(TOKEN_KEY)
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  let res
+  try {
+    res = await fetch(`${baseURL()}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined
+    })
+  } catch {
+    throw new Error("无法连接服务器，请确认后端已启动")
+  }
+
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(USER_KEY)
+    throw new Error("登录已过期，请刷新页面重试")
+  }
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.detail || `请求失败（${res.status}）`)
+  }
+  return data
+}
+
+// 确保登录：优先用本地 token，失效则用演示账号重新登录，账号不存在时自动注册
 export async function ensureLogin() {
   const current = localStorage.getItem(TOKEN_KEY)
   if (current) return current
 
-  const res = await apiRequest("/auth/login", {
-    method: "POST",
-    body: { username: DEMO_USERNAME, password: DEMO_PASSWORD }
-  })
+  const credentials = { username: DEMO_USERNAME, password: DEMO_PASSWORD }
+  let res
+  try {
+    res = await apiRequest("/auth/login", { method: "POST", body: credentials })
+  } catch {
+    try {
+      await apiRequest("/auth/register", {
+        method: "POST",
+        body: { ...credentials, real_name: "森林爱好者" }
+      })
+    } catch {
+      // 注册失败（例如已存在）时继续尝试登录
+    }
+    res = await apiRequest("/auth/login", { method: "POST", body: credentials })
+  }
 
   localStorage.setItem(TOKEN_KEY, res.access_token)
-  localStorage.setItem(USER_KEY, JSON.stringify(res.user || mockUser()))
+  if (res.user) {
+    localStorage.setItem(USER_KEY, JSON.stringify(res.user))
+  }
   return res.access_token
 }
 
@@ -332,4 +402,25 @@ export function currentUser() {
   } catch {
     return null
   }
+}
+
+function assistantBaseURL() {
+  return ""
+}
+
+export async function cozeChat(query, { conversationId } = {}) {
+  const res = await fetch(`${assistantBaseURL()}/api/coze/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query,
+      conversation_id: conversationId || undefined
+    })
+  })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `智能助手请求失败（${res.status}）`)
+  }
+  return data
 }
