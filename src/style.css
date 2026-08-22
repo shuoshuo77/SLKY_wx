@@ -14,6 +14,7 @@ button{cursor:pointer}
 .page-header h1{font-size:17px;margin:0}
 .page-header button,.section-heading button{border:0;background:none;color:#163226;display:flex;align-items:center}
 .page-header button{padding:7px}
+.page-header button.filter-active{color:#079d4d}
 .hero{height:255px;background-size:cover;background-position:center;position:relative;padding:30px 18px 18px;display:flex;flex-direction:column;justify-content:space-between}
 .hero:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(3,67,40,.72),rgba(3,67,40,.08) 80%)}
 .hero-copy,.search-box{position:relative;z-index:1}
@@ -49,8 +50,24 @@ button{cursor:pointer}
 .list-search{margin:11px 14px;background:#eef1ef;box-shadow:none}
 .chip-row{display:flex;gap:8px;padding:3px 14px 10px;overflow:hidden}
 .chip-row button{white-space:nowrap;border:1px solid #e7ede9;background:#fff;border-radius:16px;padding:6px 15px;color:#5b6962;font-size:12px}
+.chip-row button small{margin-left:4px;font-size:10px;opacity:.68}
 .chip-row .active{border-color:#c6eed7;background:#ddf5e7;color:#078f46}
 .base-list{background:#fff}
+.filter-loading,.filter-empty{margin:0;padding:22px 14px;text-align:center;color:#75847c;font-size:13px}
+.base-filter-mask{position:fixed;inset:0;z-index:90;background:rgba(10,37,25,.42);display:flex;align-items:flex-end}
+.base-filter-sheet{width:100%;max-height:76vh;overflow:auto;background:#fff;border-radius:22px 22px 0 0;padding:15px 18px calc(20px + env(safe-area-inset-bottom));animation:sheetUp .25s ease}
+.base-filter-sheet header{display:flex;align-items:center;justify-content:space-between}
+.base-filter-sheet h2{margin:0;font-size:18px;color:#163226}
+.base-filter-sheet header button{border:0;background:none;padding:4px;color:#617169}
+.base-filter-sheet header svg{width:21px}
+.filter-label{margin:22px 0 11px;font-size:13px;font-weight:700;color:#44564d}
+.filter-province-grid{display:flex;flex-wrap:wrap;gap:9px}
+.filter-province-grid button{border:1px solid #e1ebe4;background:#fff;border-radius:17px;padding:7px 11px;color:#52645b;font-size:12px}
+.filter-province-grid button small{margin-left:4px;font-size:10px;opacity:.66}
+.filter-province-grid button.active{border-color:#9fe0b9;background:#e4f7ec;color:#078f46;font-weight:700}
+.filter-sheet-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:25px}
+.filter-sheet-actions button{height:43px;border-radius:22px;font-size:14px;font-weight:700}
+.filter-reset{border:1px solid #dce8e1;background:#fff;color:#576960}.filter-done{border:0;background:#08a14f;color:#fff}
 .base-card{position:relative;display:flex;gap:12px;padding:13px 14px;border-bottom:1px solid #edf1ee}
 .base-card-content{min-width:0}
 .muted{color:#718077;font-size:12px;margin:0 0 6px}

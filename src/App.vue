@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue"
 import {
   Bot, Home, Leaf, MapPinned, Mountain, ThermometerSun, Trees, UserRound
 } from "lucide-vue-next"
-import { apiRequest, ensureLogin, currentUser, cozeChat } from "./api"
+import { apiRequest, ensureLogin, currentUser, miniappChat, resolveApiAsset } from "./api"
 import HomePage from "./pages/HomePage.vue"
 import BasesPage from "./pages/BasesPage.vue"
 import DetailPage from "./pages/DetailPage.vue"
@@ -28,6 +28,11 @@ const images = {
 const bases = ref([])
 const hotBases = ref([])
 const mapBases = ref([])
+const recommendBases = ref([])
+const provinceOptions = ref([])
+const selectedProvince = ref("")
+const serverFilteredBases = ref(null)
+const filteringBases = ref(false)
 const favoriteItems = ref([])
 const heroImage = ref(images.hero)
 const selected = ref(null)
@@ -41,7 +46,9 @@ const assistantConversationId = ref("")
 const assistantSending = ref(false)
 const assistantError = ref("")
 const messages = ref([
-  { role: "bot", text: "你好！我是森氧康养智能助手，很高兴为你服务。" }
+  { role: "bot", text: "你好！我是森氧康养智能助手，很高兴为你服务。" },
+  { role: "user", text: "推荐适合夏季避暑的基地" },
+  { role: "bot", text: "为你推荐青城山康养基地和庐山康养基地，它们气温舒适、空气质量优秀。" }
 ])
 
 /* ---------- 后端数据：收藏 / 浏览记录 / 预约 ---------- */
@@ -287,7 +294,7 @@ function primaryImage(detail) {
   const ordered = [...(detail.media || [])].sort((a, b) => a.sort_order - b.sort_order)
   const primary = ordered.find((item) => item.is_primary)
   const fallback = ordered.find((item) => item.media_type === "image")
-  return (primary || fallback)?.file_url || null
+  return resolveApiAsset((primary || fallback)?.file_url || null)
 }
 
 function mapCard(item) {
@@ -296,10 +303,11 @@ function mapCard(item) {
     name: item.name,
     area: areaText(item),
     address: item.address || "",
-    image: item.primary_image || item.base_image || item.image || fallbackImage(item.id),
+    image: resolveApiAsset(item.primary_image || item.base_image || item.image) || fallbackImage(item.id),
     tags: parseTags(item),
     viewCount: item.view_count || 0,
     distance: item.distance_km != null ? `${item.distance_km}km` : "",
+    reason: item.reason || "",
     desc: item.description || ""
   }
 }
@@ -370,10 +378,21 @@ async function loadAll() {
   loading.value = true
   loadError.value = ""
   try {
-    const allBases = await loadAllBases()
+    const [allBases, home, map, recommendations, provinces] = await Promise.all([
+      loadAllBases(),
+      apiRequest("/miniapp/home?limit=10"),
+      apiRequest("/map/bases?limit=200"),
+      apiRequest("/recommend?limit=10"),
+      apiRequest("/bases/provinces")
+    ])
     bases.value = allBases
-    hotBases.value = allBases.slice(0, 10)
-    mapBases.value = allBases.slice(0, 200)
+    hotBases.value = (home.hot_bases || []).map(mapCard)
+    if (!hotBases.value.length) hotBases.value = allBases.slice(0, 10)
+    mapBases.value = (map.items || []).map(mapCard)
+    if (!mapBases.value.length) mapBases.value = allBases.slice(0, 200)
+    recommendBases.value = (recommendations.items || []).map(mapCard)
+    provinceOptions.value = provinces || []
+    mapSelected.value ||= mapBases.value[0] || null
   } catch (err) {
     loadError.value = err.message || "数据加载失败，请确认后端已启动"
   } finally {
@@ -381,15 +400,20 @@ async function loadAll() {
   }
 }
 
-async function loadAllBases() {
-  const first = await apiRequest("/bases?page=1&page_size=100&sort_by=view_count&sort_order=desc")
+async function loadAllBases({ keyword = "", province = "" } = {}) {
+  const query = new URLSearchParams({ page: "1", page_size: "100", sort_by: "view_count", sort_order: "desc" })
+  if (keyword.trim()) query.set("keyword", keyword.trim())
+  if (province) query.set("province", province)
+  const first = await apiRequest(`/bases?${query}`)
   const items = [...(first.items || [])]
   const totalPages = Math.ceil((first.total || 0) / 100)
   if (totalPages > 1) {
     const rest = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, i) =>
-        apiRequest(`/bases?page=${i + 2}&page_size=100&sort_by=view_count&sort_order=desc`)
-      )
+      Array.from({ length: totalPages - 1 }, (_, i) => {
+        const pageQuery = new URLSearchParams(query)
+        pageQuery.set("page", String(i + 2))
+        return apiRequest(`/bases?${pageQuery}`)
+      })
     )
     for (const page of rest) items.push(...(page.items || []))
   }
@@ -400,10 +424,24 @@ onMounted(loadAll)
 
 /* ---------- 通用 ---------- */
 const filteredBases = computed(() => {
+  if (serverFilteredBases.value) return serverFilteredBases.value
   const keyword = searchText.value.trim()
   if (!keyword) return bases.value
   return bases.value.filter((item) => `${item.name}${item.area}${(item.tags || []).join("")}`.includes(keyword))
 })
+
+async function applyBaseFilter({ keyword = searchText.value, province = selectedProvince.value } = {}) {
+  searchText.value = keyword
+  selectedProvince.value = province
+  filteringBases.value = true
+  try {
+    serverFilteredBases.value = await loadAllBases({ keyword, province })
+  } catch (err) {
+    showToast(err.message || "筛选失败，请稍后重试")
+  } finally {
+    filteringBases.value = false
+  }
+}
 
 const { page, go } = usePageNavigation({
   loadStats,
@@ -453,9 +491,17 @@ async function sendMessage(text = chatText.value) {
   assistantSending.value = true
   assistantError.value = ""
   try {
-    const data = await cozeChat(value, { conversationId: assistantConversationId.value })
-    assistantConversationId.value = data.conversation_id || assistantConversationId.value
-    messages.value.push({ role: "bot", text: data.answer || "智能助手暂时没有返回内容。" })
+    const history = messages.value
+      .slice(0, -1)
+      .filter((message) => message.role === "user" || message.role === "bot")
+      .slice(-20)
+      .map((message) => ({
+        role: message.role === "bot" ? "assistant" : "user",
+        content: message.text
+      }))
+    const data = await miniappChat(value, { sessionId: assistantConversationId.value, history })
+    assistantConversationId.value = data.session_id || assistantConversationId.value
+    messages.value.push({ role: "bot", text: data.reply || "智能助手暂时没有返回内容。" })
   } catch (err) {
     assistantError.value = err.message || "智能助手请求失败"
     messages.value.push({ role: "bot", text: "智能助手暂时连接失败，请稍后再试。" })
@@ -487,8 +533,12 @@ async function sendMessage(text = chatText.value) {
           v-else-if="page === 'bases'"
           v-model:search-text="searchText"
           :filtered-bases="filteredBases"
+          :provinces="provinceOptions"
+          :selected-province="selectedProvince"
+          :loading="filteringBases"
           :is-favorite="isFavorite"
           @go="go"
+          @apply-filter="applyBaseFilter"
           @open-detail="openDetail"
           @toggle-favorite="toggleFavorite"
         />
@@ -513,9 +563,11 @@ async function sendMessage(text = chatText.value) {
           v-else-if="page === 'assistant'"
           v-model:chat-text="chatText"
           :messages="messages"
+          :featured-base="recommendBases[0] || hotBases[0] || bases[0] || null"
           :is-sending="assistantSending"
           :error="assistantError"
           @go="go"
+          @open-detail="openDetail"
           @send-message="sendMessage"
         />
         <FavoritesPage

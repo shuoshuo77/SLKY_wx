@@ -208,9 +208,8 @@ function notFound(path) {
 }
 
 function configuredBaseURL() {
-  const localValue = localStorage.getItem("syk_api_base")
   const envValue = import.meta.env.VITE_API_BASE_URL
-  return (localValue || envValue || "").replace(/\/+$/, "")
+  return (envValue || "").replace(/\/+$/, "")
 }
 
 function baseURL() {
@@ -219,7 +218,18 @@ function baseURL() {
 
 function useMockApi() {
   const configured = configuredBaseURL()
-  return !configured || configured === "mock"
+  return configured === "mock" || import.meta.env.VITE_USE_MOCK_API === "true"
+}
+
+export function resolveApiAsset(url) {
+  if (!url || url.startsWith("/assets/") || /^(?:https?:|data:)/.test(url)) return url
+
+  const path = url.startsWith("/") ? url : `/${url}`
+  const configured = configuredBaseURL()
+  if (/^https?:\/\//.test(configured)) {
+    return `${configured.replace(/\/api\/?$/, "")}${path}`
+  }
+  return path
 }
 
 function mockResponse(data) {
@@ -344,15 +354,16 @@ export async function apiRequest(path, { method = "GET", body } = {}) {
   const token = localStorage.getItem(TOKEN_KEY)
   if (token) headers.Authorization = `Bearer ${token}`
 
+  const requestUrl = `${baseURL()}${path}`
   let res
   try {
-    res = await fetch(`${baseURL()}${path}`, {
+    res = await fetch(requestUrl, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined
     })
-  } catch {
-    throw new Error("无法连接服务器，请确认后端已启动")
+  } catch (err) {
+    throw new Error(`无法连接项目后端：${requestUrl}（${err.message || "网络请求失败"}）`)
   }
 
   if (res.status === 401) {
@@ -404,23 +415,13 @@ export function currentUser() {
   }
 }
 
-function assistantBaseURL() {
-  return ""
-}
-
-export async function cozeChat(query, { conversationId } = {}) {
-  const res = await fetch(`${assistantBaseURL()}/api/coze/chat`, {
+export async function miniappChat(message, { sessionId, history = [] } = {}) {
+  return apiRequest("/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query,
-      conversation_id: conversationId || undefined
-    })
+    body: {
+      message,
+      session_id: sessionId || undefined,
+      history
+    }
   })
-
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(data.error || `智能助手请求失败（${res.status}）`)
-  }
-  return data
 }
