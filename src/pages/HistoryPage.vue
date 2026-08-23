@@ -14,7 +14,7 @@ function openBaseById(id) { emit("openBaseById", id) }
 </script>
 
 <template>
-          <header class="page-header"><button @click="go('profile')"><ArrowLeft/></button><h1>浏览记录</h1><button v-if="history.length" @click="clearHistory"><Trash2/></button><button v-else></button></header>
+          <header class="page-header"><button @click="go('profile')"><ArrowLeft/></button><h1>浏览记录</h1><button v-if="history.length" aria-label="清空浏览记录" @click="clearHistory"><Trash2/></button><span v-else class="header-spacer" aria-hidden="true"></span></header>
           <section v-if="history.length" class="record-list">
             <article v-for="item in history" :key="item.id" class="history-row" @click="openBaseById(item.id)">
               <img :src="item.image" :alt="item.name">

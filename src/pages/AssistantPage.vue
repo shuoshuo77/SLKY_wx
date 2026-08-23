@@ -3,12 +3,13 @@ import { ArrowLeft, Bot, LoaderCircle, Mic, Send, Settings } from "lucide-vue-ne
 
 defineProps({
   messages: { type: Array, default: () => [] },
+  featuredBase: { type: Object, default: null },
   isSending: { type: Boolean, default: false },
   error: { type: String, default: "" }
 })
 
 const chatText = defineModel("chatText", { type: String, default: "" })
-const emit = defineEmits(["go", "sendMessage"])
+const emit = defineEmits(["go", "openDetail", "sendMessage", "clearChat", "notify"])
 
 function go(target) {
   emit("go", target)
@@ -17,6 +18,10 @@ function go(target) {
 function sendMessage(text) {
   emit("sendMessage", text)
 }
+
+function openDetail(base) {
+  emit("openDetail", base)
+}
 </script>
 
 <template>
@@ -24,7 +29,7 @@ function sendMessage(text) {
     <header class="page-header">
       <button @click="go('home')"><ArrowLeft /></button>
       <h1>智能助手</h1>
-      <button><Settings /></button>
+      <button aria-label="清空对话" @click="emit('clearChat')"><Settings /></button>
     </header>
 
     <section class="chat-list">
@@ -37,6 +42,14 @@ function sendMessage(text) {
         <p><LoaderCircle /> 正在思考...</p>
       </div>
       <p v-if="error" class="chat-error">{{ error }}</p>
+      <article v-if="featuredBase" class="recommend-card" @click="openDetail(featuredBase)">
+        <img :src="featuredBase.image" :alt="featuredBase.name">
+        <div>
+          <b>{{ featuredBase.name }}</b>
+          <span>{{ featuredBase.area || '优质森林康养基地' }}</span>
+          <em>{{ featuredBase.reason || `热门浏览 ${featuredBase.viewCount || 0}` }}</em>
+        </div>
+      </article>
     </section>
 
     <div class="quick-prompts">
@@ -52,7 +65,7 @@ function sendMessage(text) {
         placeholder="输入你的问题..."
         @keyup.enter="sendMessage()"
       >
-      <Mic />
+      <button class="voice-trigger" type="button" aria-label="语音输入" @click="emit('notify', '当前版本暂不支持语音输入，请使用文字提问。')"><Mic /></button>
       <button :disabled="isSending || !chatText.trim()" @click="sendMessage()"><Send /></button>
     </div>
   </div>

@@ -9,6 +9,8 @@ project.private.config.json
 .DS_Store
 Thumbs.db
 .env
+server/backend/.venv/
+server/backend/**/__pycache__/
 
 # 本地验证脚本
 verify-*.mjs

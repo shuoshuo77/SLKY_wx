@@ -11,7 +11,7 @@ defineProps({
 })
 
 const searchText = defineModel("searchText", { type: String, default: "" })
-const emit = defineEmits(["loadAll", "go", "openDetail", "toggleFavorite"])
+const emit = defineEmits(["loadAll", "go", "openDetail", "toggleFavorite", "notifications", "settings"])
 
 function loadAll() { emit("loadAll") }
 function go(target) { emit("go", target) }
@@ -22,7 +22,7 @@ function toggleFavorite(base) { emit("toggleFavorite", base) }
 <template>
           <header class="brand-bar">
             <div class="brand"><Trees :size="25"/><strong>森氧康养</strong></div>
-            <div class="header-actions"><Bell :size="19"/><Settings :size="19"/></div>
+            <div class="header-actions"><button type="button" aria-label="消息通知" @click="emit('notifications')"><Bell :size="19"/></button><button type="button" aria-label="设置" @click="emit('settings')"><Settings :size="19"/></button></div>
           </header>
 
           <section v-if="loading" class="empty-state">
@@ -54,7 +54,7 @@ function toggleFavorite(base) { emit("toggleFavorite", base) }
             <div class="section-heading"><h2>热门基地</h2><button @click="go('bases')">更多 <ChevronRight :size="15"/></button></div>
             <article v-for="base in hotBases.slice(0, 3)" :key="base.id" class="base-row" @click="openDetail(base)">
               <img :src="base.image" :alt="base.name">
-              <div><h3>{{ base.name }}</h3><div class="tags"><span v-for="tag in base.tags.slice(0, 3)" :key="tag">{{ tag }}</span></div><p><Flame :size="14"/> 热度 {{ base.viewCount }}</p></div>
+              <div class="base-row-content"><h3>{{ base.name }}</h3><div class="tags"><span v-for="tag in base.tags.slice(0, 3)" :key="tag">{{ tag }}</span></div><p><Flame :size="14"/> 热度 {{ base.viewCount }}</p></div>
               <button class="heart" :class="{ active: isFavorite(base.id) }" @click.stop="toggleFavorite(base)"><Heart :size="20" :fill="isFavorite(base.id) ? 'currentColor' : 'none'"/></button>
             </article>
           </section>
