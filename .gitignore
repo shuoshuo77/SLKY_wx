@@ -9,6 +9,7 @@ project.private.config.json
 .DS_Store
 Thumbs.db
 .env
+.env.cloud
 server/backend/.venv/
 server/backend/**/__pycache__/
 

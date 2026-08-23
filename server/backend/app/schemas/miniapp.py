@@ -25,7 +25,7 @@ class MiniAppChatRequest(BaseModel):
 class MiniAppChatResponse(BaseModel):
     session_id: str
     reply: str
-    provider: Literal["deepseek"]
+    provider: Literal["deepseek", "coze", "local"]
     suggestions: list[str]
     disclaimer: str
 

@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
     DEEPSEEK_MODEL: str = "deepseek-chat"
     DEEPSEEK_TIMEOUT_SECONDS: int = 30
+    COZE_API_URL: str = "https://api.coze.cn/v3/chat"
+    COZE_API_TOKEN: str | None = None
+    COZE_BOT_ID: str | None = None
+    COZE_USER_ID: str = "senyang-web-user"
+    COZE_POLL_INTERVAL_SECONDS: float = 0.4
+    COZE_MAX_POLLS: int = 75
     CHAT_RATE_LIMIT: int = 10
     CHAT_RATE_WINDOW_SECONDS: int = 300
     CHAT_MAX_OUTPUT_TOKENS: int = 600
@@ -88,7 +94,11 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must contain at least 32 characters")
         return self
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ("../../.env", ".env"),
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 @lru_cache()

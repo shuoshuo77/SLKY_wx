@@ -733,7 +733,7 @@ async function sendMessage(text = chatText.value) {
 <template>
   <div class="stage">
     <div class="phone-shell">
-      <main class="app-view">
+      <main class="app-view" :class="{ 'assistant-view': page === 'assistant' }">
         <HomePage
           v-if="page === 'home'"
           v-model:search-text="searchText"

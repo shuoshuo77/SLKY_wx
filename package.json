@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev-with-backend.mjs",
+    "dev:cloud": "node scripts/dev-with-cloud-backend.mjs",
     "dev:vite": "vite",
     "backend": "powershell -NoProfile -ExecutionPolicy Bypass -File server/backend/start.ps1",
+    "backend:cloud": "powershell -NoProfile -ExecutionPolicy Bypass -File server/backend/start-cloud.ps1",
     "assistant-proxy": "node server/dify-proxy.mjs",
     "build": "vite build",
     "preview": "vite preview"

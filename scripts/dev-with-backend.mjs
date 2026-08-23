@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 
 const node = process.execPath
 const viteBin = resolve("node_modules", "vite", "bin", "vite.js")
-const backendScript = resolve("server", "backend", "start.ps1")
+const backendScript = resolve(process.env.SLKY_BACKEND_SCRIPT || "server/backend/start.ps1")
 const backendUrl = process.env.SLKY_BACKEND_URL || "http://127.0.0.1:8001"
 const healthUrl = `${backendUrl}/health/ready`
 const viteArgs = [viteBin, ...process.argv.slice(2)]
