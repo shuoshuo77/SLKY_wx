@@ -13,7 +13,7 @@ function toggleFavorite(base) { emit("toggleFavorite", base) }
 </script>
 
 <template>
-          <header class="page-header"><button @click="go('profile')"><ArrowLeft/></button><h1>我的收藏</h1><button></button></header>
+          <header class="page-header"><button @click="go('profile')"><ArrowLeft/></button><h1>我的收藏</h1><span class="header-spacer" aria-hidden="true"></span></header>
           <section v-if="favoriteBases.length" class="base-list">
             <article v-for="base in favoriteBases" :key="base.id" class="base-card" @click="openDetail(base)">
               <img :src="base.image" :alt="base.name">

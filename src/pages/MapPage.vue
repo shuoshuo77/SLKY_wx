@@ -6,14 +6,14 @@ defineProps({
 })
 
 const mapSelected = defineModel("mapSelected", { type: Object, default: null })
-const emit = defineEmits(["go", "openDetail"])
+const emit = defineEmits(["go", "openDetail", "openFilter"])
 
 function go(target) { emit("go", target) }
 function openDetail(base) { emit("openDetail", base) }
 </script>
 
 <template>
-          <header class="page-header"><button @click="go('home')"><ArrowLeft/></button><h1>地图找基地</h1><button><SlidersHorizontal/></button></header>
+          <header class="page-header"><button @click="go('home')"><ArrowLeft/></button><h1>地图找基地</h1><button aria-label="筛选基地" @click="emit('openFilter')"><SlidersHorizontal/></button></header>
           <section class="map-panel">
             <div class="map-grid"></div>
             <button v-for="(base, index) in mapBases.slice(0, 12)" :key="base.id" class="pin" :style="{ left: `${15 + (index % 4) * 24}%`, top: `${22 + Math.floor(index / 4) * 28}%` }" @click="mapSelected = base"><MapPinned/></button>

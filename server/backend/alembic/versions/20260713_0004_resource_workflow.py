@@ -24,6 +24,26 @@ NEW_ENUM = sa.Enum("draft", "pending", "published", "rejected", "archived")
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        # Revision 0001 creates the current ORM schema for SQLite.  For an
+        # older SQLite database, add only the missing columns and indexes;
+        # SQLite does not support the enum/foreign-key ALTER operations below.
+        for table in TABLES:
+            inspector = sa.inspect(bind)
+            columns = {column["name"] for column in inspector.get_columns(table)}
+            indexes = {index["name"] for index in inspector.get_indexes(table)}
+            if "reviewed_by" not in columns:
+                op.add_column(table, sa.Column("reviewed_by", sa.BigInteger(), nullable=True))
+            if "reviewed_at" not in columns:
+                op.add_column(table, sa.Column("reviewed_at", sa.DateTime(), nullable=True))
+            if "reject_reason" not in columns:
+                op.add_column(table, sa.Column("reject_reason", sa.Text(), nullable=True))
+            index_name = f"idx_{table}_status_created"
+            if index_name not in indexes:
+                op.create_index(index_name, table, ["status", "created_at"])
+        return
+
     for table in TABLES:
         inspector = sa.inspect(op.get_bind())
         columns = {column["name"] for column in inspector.get_columns(table)}
@@ -65,6 +85,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        return
     for table in reversed(TABLES):
         op.execute(sa.text(
             f"UPDATE {table} SET status = 'draft' "

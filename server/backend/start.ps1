@@ -29,6 +29,7 @@ $env:APP_DEBUG = 'true'
 
 Push-Location $root
 try {
+    & $venvPython -m alembic upgrade head
     & $venvPython -m uvicorn app.main:app --host 127.0.0.1 --port $Port
 }
 finally {

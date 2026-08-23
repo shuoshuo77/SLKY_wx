@@ -2,9 +2,10 @@
 森林康养基地核心API路由 — CRUD + 审核 + 筛选查询
 """
 from datetime import datetime
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import and_, or_, desc, asc, func
+from sqlalchemy import and_, or_, desc, asc, func, select
 
 from app.database import get_db
 from app.dependencies.auth import get_current_user, get_reviewer, get_verified_user
@@ -15,7 +16,7 @@ from app.models.base import (
     BaseOperation, BaseMedia, BaseContact,
 )
 from app.schemas.base import (
-    BaseCreate, BaseUpdate, BaseListOut, BaseDetailOut, BaseReview,
+    BaseCreate, BaseUpdate, BaseListOut, BaseDetailOut, PublicBaseDetailOut, BaseReview,
     PaginatedBases, BaseQuery,
     QualificationCreate, ResourceCreate, BusinessCreate,
     OperationCreate, ContactCreate, MediaCreate,
@@ -23,6 +24,14 @@ from app.schemas.base import (
 from app.utils.scope import ensure_province_scope, require_local_admin_province
 
 router = APIRouter(prefix="/api/bases", tags=["康养基地"])
+
+SORT_COLUMNS = {
+    "created_at": ForestBase.created_at,
+    "updated_at": ForestBase.updated_at,
+    "view_count": ForestBase.view_count,
+    "forest_coverage": ForestBase.forest_coverage,
+    "name": ForestBase.name,
+}
 
 
 def _base_load_options():
@@ -54,6 +63,41 @@ def _ensure_reviewer_scope(base: ForestBase, reviewer: User) -> None:
     ensure_province_scope(reviewer, base.province)
 
 
+def _public_detail(base: ForestBase) -> PublicBaseDetailOut:
+    """Build a visitor-safe response without ownership, review, or contact PII."""
+    return PublicBaseDetailOut(
+        id=base.id,
+        name=base.name,
+        province=base.province,
+        city=base.city,
+        district=base.district,
+        address=base.address,
+        longitude=base.longitude,
+        latitude=base.latitude,
+        established_date=base.established_date,
+        total_area=base.total_area,
+        forest_coverage=base.forest_coverage,
+        description=base.description,
+        tags=base.tags,
+        view_count=base.view_count or 0,
+        updated_at=base.updated_at,
+        qualifications=[
+            {
+                "qual_level": item.qual_level,
+                "qual_name": item.qual_name,
+                "issuing_authority": item.issuing_authority,
+                "issue_date": item.issue_date,
+                "valid_until": item.valid_until,
+            }
+            for item in base.qualifications
+        ],
+        resources=base.resources,
+        business=base.business,
+        operations=base.operations,
+        media=[item for item in base.media if item.media_type in ("image", "video")],
+    )
+
+
 def _prepare_base_for_edit(base: ForestBase) -> None:
     if base.status == "pending":
         raise HTTPException(
@@ -68,6 +112,7 @@ def _prepare_base_for_edit(base: ForestBase) -> None:
 
 # ===================== 公开接口 =====================
 
+@router.get("", response_model=PaginatedBases, include_in_schema=False)
 @router.get("/", response_model=PaginatedBases, summary="基地列表(公开)")
 def list_bases(
     keyword: str = Query(None, description="名称/地址搜索"),
@@ -78,8 +123,8 @@ def list_bases(
     min_coverage: float = Query(None, description="最低森林覆盖率"),
     max_coverage: float = Query(None, description="最高森林覆盖率"),
     product_type: str = Query(None, description="康养产品类型"),
-    sort_by: str = Query("created_at"),
-    sort_order: str = Query("desc"),
+    sort_by: Literal["created_at", "updated_at", "view_count", "forest_coverage", "name"] = Query("created_at"),
+    sort_order: Literal["asc", "desc"] = Query("desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -110,17 +155,31 @@ def list_bases(
         q = q.filter(ForestBase.forest_coverage <= max_coverage)
 
     # 按资质等级筛选（联表）
+    needs_distinct = False
     if qual_level:
         q = q.join(BaseQualification).filter(BaseQualification.qual_level == qual_level)
+        needs_distinct = True
 
     # 按产品类型筛选（JSON查询，仅MySQL 5.7+支持）
     if product_type:
-        q = q.join(BaseBusiness).filter(
-            func.json_contains(BaseBusiness.product_types, f'"{product_type}"')
-        )
+        q = q.join(BaseBusiness)
+        if db.bind.dialect.name == "sqlite":
+            product_values = func.json_each(BaseBusiness.product_types).table_valued("value").alias("product_values")
+            q = q.filter(
+                select(1)
+                .select_from(product_values)
+                .where(product_values.c.value == product_type)
+                .exists()
+            )
+        else:
+            q = q.filter(func.json_contains(BaseBusiness.product_types, f'"{product_type}"'))
+        needs_distinct = True
+
+    if needs_distinct:
+        q = q.distinct()
 
     # 排序
-    sort_col = getattr(ForestBase, sort_by, ForestBase.created_at)
+    sort_col = SORT_COLUMNS[sort_by]
     q = q.order_by(desc(sort_col) if sort_order == "desc" else asc(sort_col))
 
     total = q.count()
@@ -167,17 +226,29 @@ def list_cities(
     return [{"city": row[0], "count": row[1]} for row in rows]
 
 
-@router.get("/{base_id:int}", response_model=BaseDetailOut, summary="基地详情")
+@router.get("/{base_id:int}", response_model=PublicBaseDetailOut, summary="基地详情（公开）")
 def get_base(base_id: int, db: Session = Depends(get_db)):
     base = db.query(ForestBase).options(*_base_load_options()).filter(ForestBase.id == base_id).first()
     if not base or base.status != "approved":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="基地不存在")
 
-    # 增加浏览数
-    base.view_count = (base.view_count or 0) + 1
-    db.commit()
+    # GET 必须保持无副作用；浏览量由 /api/miniapp/bases/{id}/view 显式记录。
+    return _public_detail(base)
 
-    return BaseDetailOut.model_validate(_attach_relations(base, db))
+
+@router.get("/{base_id:int}/manage", response_model=BaseDetailOut, summary="基地详情（管理）")
+def get_manage_base(
+    base_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    base = db.query(ForestBase).options(*_base_load_options()).filter(ForestBase.id == base_id).first()
+    if not base:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="基地不存在")
+    if base.submit_by != current_user.id and current_user.user_type not in ("local_admin", "platform_admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权查看管理详情")
+    ensure_province_scope(current_user, base.province)
+    return BaseDetailOut.model_validate(base)
 
 
 # ===================== 认证用户接口 =====================
@@ -241,8 +312,25 @@ def update_base(
 
     _prepare_base_for_edit(base)
 
-    for field, value in req.model_dump(exclude_unset=True).items():
+    nested_fields = {"qualifications", "resources", "business", "operations", "contacts"}
+    for field, value in req.model_dump(exclude_unset=True, exclude=nested_fields).items():
         setattr(base, field, value)
+
+    # 嵌套字段采用“传入即整体替换、未传即保留”的明确契约，避免编辑页静默丢失数据。
+    if "qualifications" in req.model_fields_set:
+        base.qualifications[:] = []
+        for item in req.qualifications or []:
+            base.qualifications.append(BaseQualification(**item.model_dump(exclude_unset=True)))
+    if "resources" in req.model_fields_set:
+        base.resources = BaseResource(**req.resources.model_dump(exclude_unset=True)) if req.resources else None
+    if "business" in req.model_fields_set:
+        base.business = BaseBusiness(**req.business.model_dump(exclude_unset=True)) if req.business else None
+    if "operations" in req.model_fields_set:
+        base.operations = BaseOperation(**req.operations.model_dump(exclude_unset=True)) if req.operations else None
+    if "contacts" in req.model_fields_set:
+        base.contacts[:] = []
+        for item in req.contacts or []:
+            base.contacts.append(BaseContact(**item.model_dump(exclude_unset=True)))
 
     db.commit()
     db.refresh(base)

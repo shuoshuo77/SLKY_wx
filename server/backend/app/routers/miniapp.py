@@ -5,17 +5,26 @@ from math import asin, cos, radians, sin, sqrt
 from uuid import uuid4
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import desc
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.database import get_db
+from app.dependencies.auth import get_current_user
 from app.models.base import ForestBase
 from app.models.other import Expert, NaturalResource, Policy
+from app.models.user import User
 from app.routers.bases import get_base, list_bases
 from app.schemas.base import PaginatedBases
-from app.schemas.miniapp import MiniAppChatRequest
+from app.schemas.miniapp import (
+    MapBasesOut,
+    MiniAppChatRequest,
+    MiniAppChatResponse,
+    MiniAppHomeOut,
+    RecommendationOut,
+)
+from app.utils.rate_limit import client_ip, rate_limiter
 
 router = APIRouter(prefix="/api", tags=["微信小程序"])
 settings = get_settings()
@@ -73,7 +82,7 @@ def _approved_bases(db: Session):
     )
 
 
-@router.get("/miniapp/home", summary="小程序首页聚合数据")
+@router.get("/miniapp/home", response_model=MiniAppHomeOut, summary="小程序首页聚合数据")
 def miniapp_home(
     limit: int = Query(6, ge=1, le=20),
     db: Session = Depends(get_db),
@@ -110,12 +119,14 @@ def miniapp_home(
     }
 
 
-@router.get("/recommend", summary="小程序基地推荐")
+@router.get("/recommend", include_in_schema=False, deprecated=True)
+@router.get("/miniapp/recommendations", response_model=RecommendationOut, summary="小程序基地推荐")
 def recommend_bases(
     province: str | None = Query(None),
     city: str | None = Query(None),
     latitude: float | None = Query(None, ge=-90, le=90),
     longitude: float | None = Query(None, ge=-180, le=180),
+    radius_km: float = Query(100, gt=0, le=1000, description="附近推荐半径（公里）"),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
 ):
@@ -123,36 +134,51 @@ def recommend_bases(
 
     不持久化用户定位数据；缺少经纬度时自然降级为热门推荐。
     """
+    if (latitude is None) != (longitude is None):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="经纬度必须同时提供")
+
     query = _approved_bases(db)
     if province:
         query = query.filter(ForestBase.province == province)
     if city:
         query = query.filter(ForestBase.city == city)
-    bases = query.order_by(desc(ForestBase.view_count), desc(ForestBase.created_at)).limit(limit * 4).all()
-
     nearby = latitude is not None and longitude is not None
     cards: list[dict] = []
-    for base in bases:
-        distance = None
-        if nearby and base.latitude is not None and base.longitude is not None:
-            distance = round(_distance_km(latitude, longitude, float(base.latitude), float(base.longitude)), 2)
-        reason = "附近推荐" if distance is not None else ("所在地推荐" if province or city else "热门推荐")
-        cards.append(_base_card(base, reason=reason, distance_km=distance))
     if nearby:
-        cards.sort(key=lambda item: (item["distance_km"] is None, item["distance_km"] or float("inf"), -item["view_count"]))
+        # 不能先按热度截断再计算距离，否则会漏掉真正最近的基地。
+        bases = query.filter(
+            ForestBase.latitude.is_not(None),
+            ForestBase.longitude.is_not(None),
+        ).all()
+        for base in bases:
+            distance = round(_distance_km(latitude, longitude, float(base.latitude), float(base.longitude)), 2)
+            if distance <= radius_km:
+                cards.append(_base_card(base, reason="附近推荐", distance_km=distance))
+        cards.sort(key=lambda item: (item["distance_km"], -item["view_count"]))
+    else:
+        bases = query.order_by(desc(ForestBase.view_count), desc(ForestBase.created_at)).limit(limit).all()
+        reason = "所在地推荐" if province or city else "热门推荐"
+        cards = [_base_card(base, reason=reason) for base in bases]
 
     return {
         "items": cards[:limit],
         "recommendation_mode": "nearby" if nearby else ("location" if province or city else "popular"),
         "location_used": nearby,
+        "radius_km": radius_km if nearby else None,
     }
 
 
-@router.get("/map/bases", summary="地图基地标记")
+@router.get("/map/bases", include_in_schema=False, deprecated=True)
+@router.get("/miniapp/map/bases", response_model=MapBasesOut, summary="地图基地标记")
 def map_bases(
     province: str | None = Query(None),
     city: str | None = Query(None),
-    limit: int = Query(200, ge=1, le=500),
+    min_latitude: float | None = Query(None, ge=-90, le=90),
+    max_latitude: float | None = Query(None, ge=-90, le=90),
+    min_longitude: float | None = Query(None, ge=-180, le=180),
+    max_longitude: float | None = Query(None, ge=-180, le=180),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(200, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     query = _approved_bases(db).filter(ForestBase.latitude.is_not(None), ForestBase.longitude.is_not(None))
@@ -160,7 +186,18 @@ def map_bases(
         query = query.filter(ForestBase.province == province)
     if city:
         query = query.filter(ForestBase.city == city)
-    bases = query.order_by(desc(ForestBase.view_count)).limit(limit).all()
+    bounds = (min_latitude, max_latitude, min_longitude, max_longitude)
+    if any(value is not None for value in bounds):
+        if any(value is None for value in bounds):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="地图范围必须同时提供四个边界坐标")
+        if min_latitude > max_latitude or min_longitude > max_longitude:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="地图范围坐标无效")
+        query = query.filter(
+            ForestBase.latitude.between(min_latitude, max_latitude),
+            ForestBase.longitude.between(min_longitude, max_longitude),
+        )
+    total = query.count()
+    bases = query.order_by(desc(ForestBase.view_count)).offset((page - 1) * page_size).limit(page_size).all()
     return {
         "items": [
             {
@@ -174,22 +211,29 @@ def map_bases(
                 "primary_image": _primary_image(base),
             }
             for base in bases
-        ]
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
     }
 
 
-@router.post("/chat", summary="小程序智能体对话")
-def miniapp_chat(req: MiniAppChatRequest):
-    """调用 DeepSeek 兼容接口；未配置密钥时返回可用的引导回复。"""
+@router.post("/chat", include_in_schema=False, deprecated=True)
+@router.post("/miniapp/chat", response_model=MiniAppChatResponse, summary="小程序智能体对话")
+def miniapp_chat(
+    req: MiniAppChatRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """调用 DeepSeek 兼容接口，并按用户和来源限制成本暴露。"""
+    rate_limiter.check(
+        f"chat:{current_user.id}:{client_ip(request)}",
+        settings.CHAT_RATE_LIMIT,
+        settings.CHAT_RATE_WINDOW_SECONDS,
+    )
     session_id = req.session_id or uuid4().hex
     if not settings.DEEPSEEK_API_KEY:
-        return {
-            "session_id": session_id,
-            "reply": "智能咨询服务尚未配置。你可以先使用基地查询、地图导览和热门推荐功能查找合适的森林康养基地。",
-            "provider": "fallback",
-            "suggestions": _QUICK_QUESTIONS,
-            "disclaimer": "健康建议仅供参考，不替代医生诊断或治疗。",
-        }
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="智能咨询服务尚未配置")
 
     messages = [
         {
@@ -203,7 +247,12 @@ def miniapp_chat(req: MiniAppChatRequest):
         response = requests.post(
             f"{settings.DEEPSEEK_BASE_URL.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}"},
-            json={"model": settings.DEEPSEEK_MODEL, "messages": messages, "temperature": 0.7},
+            json={
+                "model": settings.DEEPSEEK_MODEL,
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": settings.CHAT_MAX_OUTPUT_TOKENS,
+            },
             timeout=settings.DEEPSEEK_TIMEOUT_SECONDS,
         )
         response.raise_for_status()

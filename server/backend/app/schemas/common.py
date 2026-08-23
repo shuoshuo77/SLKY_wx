@@ -15,3 +15,13 @@ class PaginatedResponse(BaseModel):
     page: int
     page_size: int
     items: List[Any]
+
+
+class MessageOut(BaseModel):
+    message: str
+
+
+class UploadOut(BaseModel):
+    url: str
+    filename: str | None
+    size: int

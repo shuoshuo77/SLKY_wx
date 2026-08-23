@@ -23,11 +23,11 @@ from app.schemas.article import (
     # Source
     SourceCreate, SourceUpdate, SourceOut, SourceListOut,
     # Keyword
-    KeywordCreate, KeywordOut,
+    KeywordCreate, KeywordOut, KeywordListOut,
     # Article
     ArticleOut, ArticleListOut, ArticleDetailOut, ArticleReview,
     # Task
-    TaskOut,
+    TaskOut, TaskListOut,
 )
 from app.schemas.common import PaginationParams, PaginatedResponse
 from app.utils.scope import ensure_province_scope, require_local_admin_province
@@ -39,7 +39,7 @@ router = APIRouter(prefix="/api/articles", tags=["文章采集"])
 # =====================================================================
 # 数据源管理
 # =====================================================================
-@router.get("/sources", summary="数据源列表")
+@router.get("/sources", response_model=SourceListOut, summary="数据源列表")
 def list_sources(
     category: Optional[str] = None,
     is_active: Optional[bool] = None,
@@ -140,7 +140,7 @@ def delete_source(
 # =====================================================================
 # 关键词管理
 # =====================================================================
-@router.get("/keywords", summary="关键词词库")
+@router.get("/keywords", response_model=KeywordListOut, summary="关键词词库")
 def list_keywords(
     keyword_type: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -209,7 +209,7 @@ def delete_keyword(
 # =====================================================================
 # 文章列表 / 详情 / 搜索
 # =====================================================================
-@router.get("/", summary="文章列表（分页+筛选）")
+@router.get("/", response_model=ArticleListOut, summary="文章列表（分页+筛选）")
 def list_articles(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -295,7 +295,7 @@ def list_articles(
     }
 
 
-@router.get("/{article_id:int}", summary="文章详情")
+@router.get("/{article_id:int}", response_model=ArticleDetailOut, summary="文章详情")
 def get_article(
     article_id: int,
     db: Session = Depends(get_db),
@@ -440,7 +440,7 @@ def trigger_crawl(
     }
 
 
-@router.get("/tasks", summary="采集任务列表")
+@router.get("/tasks", response_model=TaskListOut, summary="采集任务列表")
 def list_tasks(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),

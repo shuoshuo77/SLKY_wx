@@ -10,6 +10,7 @@ button{cursor:pointer}
 .brand{display:flex;align-items:center;gap:9px;color:#116837;font-size:19px}
 .brand svg{fill:#2db568;color:#197f49}
 .header-actions{display:flex;gap:16px}
+.header-actions button{border:0;background:transparent;color:#163226;padding:4px;display:grid;place-items:center}
 .page-header{position:relative}
 .page-header h1{font-size:17px;margin:0}
 .page-header button,.section-heading button{border:0;background:none;color:#163226;display:flex;align-items:center}
@@ -32,14 +33,18 @@ button{cursor:pointer}
 .section-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 .section-heading h2,.detail-body h2,.profile-menu h2{font-size:17px;margin:0}
 .section-heading button{font-size:13px;color:#64766d}
-.base-row{position:relative;display:grid;grid-template-columns:108px 1fr;gap:12px;padding:11px 0;border-bottom:1px solid #eef2ef}
+.base-row{display:grid;grid-template-columns:96px minmax(0,1fr) 32px;gap:12px;align-items:start;padding:11px 0;border-bottom:1px solid #eef2ef}
 .base-row img,.base-card img{width:108px;height:82px;object-fit:cover;border-radius:7px}
+.base-row img{width:96px;height:72px}
+.base-row-content{min-width:0;padding-top:2px}
 .base-row h3,.base-card h3,.map-result h3{font-size:15px;margin:2px 0 8px}
+.base-row h3{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.35}
 .tags{display:flex;flex-wrap:wrap;gap:5px}
 .tags span,.services span{font-size:11px;color:#16824a;background:#e7f7ed;border-radius:4px;padding:3px 6px}
 .base-row p,.map-result p{margin:8px 0 0;color:#6b7972;font-size:12px;display:flex;align-items:center;gap:4px}
 .base-row p svg,.rating svg,.map-result p svg,.detail-rating svg{color:#f5ad00;fill:#f5ad00}
 .heart{position:absolute;right:2px;top:14px;color:#02a04e;border:0;background:none;padding:0;width:30px;height:30px;display:grid;place-items:center;border-radius:50%;z-index:2}
+.base-row .heart{position:static;justify-self:end;align-self:start;margin-top:1px}
 .heart.active{color:#ef4b7c;background:rgba(239,75,124,.09)}
 .base-card .heart{top:10px;right:6px}
 .page-header .heart{position:static;background:none}
@@ -103,7 +108,8 @@ button{cursor:pointer}
 .monitor-body{padding:16px}
 .location{display:flex;gap:5px;align-items:center;font-size:13px}
 .time-tabs{display:flex;justify-content:space-around;background:#fff;border-radius:7px;padding:12px;font-size:12px}
-.time-tabs b{color:#079d4d}
+.time-tabs button{border:0;border-radius:5px;background:transparent;color:#6b7a72;font:inherit;padding:4px 8px}
+.time-tabs button.active{background:#e8f7ee;color:#079d4d;font-weight:700}
 .aqi-ring{width:178px;height:178px;margin:30px auto;border-radius:50%;border:13px solid #54c987;box-shadow:inset 0 0 0 10px #e8f7ee;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .aqi-ring small{color:#6c7b73}
 .aqi-ring strong{font-size:38px;color:#08a04f}
@@ -134,14 +140,19 @@ button{cursor:pointer}
 .chat-composer{position:absolute;bottom:76px;left:0;right:0;height:48px;background:#fff;display:flex;align-items:center;gap:8px;padding:6px 12px}
 .chat-composer input{background:#f2f4f3;border-radius:18px;padding:9px 13px}
 .chat-composer button{width:33px;height:33px;border:0;border-radius:50%;background:#08a04e;color:#fff;display:grid;place-items:center}
+.chat-composer .voice-trigger{background:transparent;color:#61736a;flex:0 0 auto}
 .chat-composer button:disabled{opacity:.45;cursor:not-allowed}
 .chat-composer svg{width:19px}
+.header-spacer{width:38px;height:38px;display:block}
 .chat-error{margin:12px 42px 0;color:#c14b4b;background:#fff3f3;border:1px solid #ffdada;border-radius:7px;padding:9px 11px;font-size:12px;line-height:1.5}
 @keyframes spin{to{transform:rotate(360deg)}}
-.profile-head{padding:28px 17px 21px;background:linear-gradient(120deg,#e5f7ec,#f8fbf9);display:grid;grid-template-columns:54px 1fr 24px 24px;gap:10px;align-items:center}
+.profile-head{padding:28px 17px 21px;background:linear-gradient(120deg,#e5f7ec,#f8fbf9);display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;align-items:center}
 .profile-avatar{width:54px;height:54px;border-radius:50%;background:#42b875;color:#fff;display:grid;place-items:center}
+.profile-summary{min-width:0}
 .profile-head h1{font-size:18px;margin:0 0 5px}
+.profile-head h1,.profile-head p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .profile-head p{margin:0;color:#68776f;font-size:11px}
+.profile-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .profile-stats{display:grid;grid-template-columns:repeat(3,1fr);background:#fff;padding:17px;margin-bottom:10px}
 .profile-stats div{display:flex;flex-direction:column-reverse;align-items:center;gap:5px;font-size:12px}
 .profile-stats b{font-size:18px}
@@ -179,7 +190,7 @@ button{cursor:pointer}
 .empty-state p{font-size:12px;color:#7a8981;margin:0 0 20px;line-height:1.7}
 .empty-state button{border:0;border-radius:20px;background:#08a14f;color:#fff;padding:10px 30px;font-size:13px}
 /* ---------- 预约弹窗 / 确认弹窗 / 轻提示 ---------- */
-.sheet-mask{position:absolute;inset:0;background:rgba(10,37,25,.45);z-index:20;display:flex;align-items:flex-end}
+.sheet-mask{position:absolute;inset:0;background:rgba(10,37,25,.45);z-index:60;display:flex;align-items:flex-end}
 .booking-sheet,.confirm-sheet{width:100%;background:#fff;border-radius:22px 22px 0 0;padding:14px 18px 22px;animation:sheetUp .25s ease}
 .sheet-handle{width:40px;height:4px;border-radius:2px;background:#dde5e0;margin:0 auto 14px}
 .booking-sheet h2,.confirm-sheet h2{font-size:17px;margin:0 0 4px}
@@ -188,6 +199,8 @@ button{cursor:pointer}
 .field>span{font-size:12px;color:#4f6158;font-weight:700}
 .field input{border:1px solid #e2eae5;border-radius:9px;padding:10px 12px;font-size:13px;outline:0;background:#fbfdfc}
 .field input:focus{border-color:#57c58a}
+.feedback-sheet textarea{width:100%;min-height:118px;box-sizing:border-box;resize:vertical;border:1px solid #e2eae5;border-radius:9px;padding:10px 12px;font:inherit;line-height:1.5;outline:0;background:#fbfdfc}
+.feedback-sheet textarea:focus{border-color:#57c58a}
 .slot-row{display:flex;gap:7px;flex-wrap:wrap}
 .slot-row button{border:1px solid #e2eae5;background:#fff;border-radius:16px;padding:7px 12px;font-size:12px;color:#4f6158}
 .slot-row button.active{border-color:#0aa151;background:#e4f7ec;color:#078f46;font-weight:700}
@@ -210,4 +223,55 @@ button{cursor:pointer}
 .app-view{min-height:100vh}
 .bottom-nav{width:100%}
 .map-panel{height:calc(100vh - 138px)}
+}
+.auth-sheet {
+  width: min(100%, 420px);
+  background: #fff;
+  border-radius: 26px 26px 0 0;
+  max-height: calc(100% - 16px);
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 14px 20px 24px;
+  animation: sheetUp .25s ease;
+}
+.auth-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.auth-welcome{display:flex;align-items:center;gap:10px}
+.auth-welcome>span{width:38px;height:38px;border-radius:50%;background:#e4f7ec;color:#079d4d;display:grid;place-items:center}
+.auth-welcome svg{width:21px}
+.auth-welcome p{margin:0 0 2px;color:#718077;font-size:11px;font-weight:700}
+.auth-welcome h2{margin:0;font-size:19px;color:#153728}
+.auth-close{border:0;background:transparent;color:#718077;padding:7px 0;font-size:12px}
+.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:#f0f5f2;border-radius:12px;padding:4px;margin-bottom:14px}
+.auth-tabs button{border:0;border-radius:9px;background:transparent;color:#718077;padding:9px;font-size:13px;font-weight:700}
+.auth-tabs button.active{background:#fff;color:#079d4d;box-shadow:0 2px 7px rgba(24,88,53,.12)}
+.auth-primary{width:100%;height:45px;border:0;border-radius:22px;background:#08a14f;color:#fff;font-size:14px;font-weight:700;margin-top:3px}
+.auth-primary:disabled{opacity:.55;cursor:not-allowed}
+.auth-switch{margin:13px 0 0;text-align:center;color:#718077;font-size:12px}
+.auth-switch button{border:0;background:transparent;color:#079d4d;font:inherit;font-weight:700;padding:0 0 0 4px}
+
+.profile-auth {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: #16724a;
+  background: #e9f6ef;
+  font: inherit;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.profile-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  color: #203a2e;
+  background: transparent;
+}
+
+.profile-icon svg {
+  width: 20px;
+  height: 20px;
 }

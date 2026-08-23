@@ -14,6 +14,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # SQLite does not support MySQL's LONGTEXT and does not enforce VARCHAR
+    # lengths, so the initial TEXT-affinity columns already accept this data.
+    if op.get_bind().dialect.name == "sqlite":
+        return
     op.alter_column(
         "policies",
         "content",
@@ -31,6 +35,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        return
     op.alter_column(
         "industry_data",
         "content",

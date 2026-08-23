@@ -41,6 +41,32 @@ class QualificationOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PublicQualificationOut(BaseModel):
+    """适合公开展示的资质信息，不暴露证书编号或文件地址。"""
+
+    qual_level: Optional[str]
+    qual_name: Optional[str]
+    issuing_authority: Optional[str]
+    issue_date: Optional[date]
+    valid_until: Optional[date]
+
+    model_config = {"from_attributes": True}
+
+
+class PublicMediaOut(BaseModel):
+    """公开详情仅允许展示图片和视频素材。"""
+
+    id: int
+    media_type: str
+    file_url: str
+    file_name: Optional[str]
+    description: Optional[str]
+    is_primary: bool
+    sort_order: int
+
+    model_config = {"from_attributes": True}
+
+
 # ---------- 自然资源 ----------
 
 class ResourceCreate(BaseModel):
@@ -182,11 +208,11 @@ class BaseCreate(BaseModel):
     city: str = Field(..., max_length=30)
     district: Optional[str] = Field(None, max_length=50)
     address: str = Field(..., max_length=300)
-    longitude: Optional[Decimal] = Field(None, description="经度")
-    latitude: Optional[Decimal] = Field(None, description="纬度")
+    longitude: Optional[Decimal] = Field(None, ge=-180, le=180, description="经度")
+    latitude: Optional[Decimal] = Field(None, ge=-90, le=90, description="纬度")
     established_date: Optional[date] = None
-    total_area: Optional[Decimal] = Field(None, description="占地面积(亩)")
-    forest_coverage: Optional[Decimal] = Field(None, description="森林覆盖率(%)")
+    total_area: Optional[Decimal] = Field(None, ge=0, description="占地面积(亩)")
+    forest_coverage: Optional[Decimal] = Field(None, ge=0, le=100, description="森林覆盖率(%)")
     description: Optional[str] = None
 
     # 可一并提交的子表
@@ -203,12 +229,19 @@ class BaseUpdate(BaseModel):
     city: Optional[str] = Field(None, max_length=30)
     district: Optional[str] = Field(None, max_length=50)
     address: Optional[str] = Field(None, max_length=300)
-    longitude: Optional[Decimal] = None
-    latitude: Optional[Decimal] = None
+    longitude: Optional[Decimal] = Field(None, ge=-180, le=180)
+    latitude: Optional[Decimal] = Field(None, ge=-90, le=90)
     established_date: Optional[date] = None
-    total_area: Optional[Decimal] = None
-    forest_coverage: Optional[Decimal] = None
+    total_area: Optional[Decimal] = Field(None, ge=0)
+    forest_coverage: Optional[Decimal] = Field(None, ge=0, le=100)
     description: Optional[str] = None
+
+    # 传入即按整体替换；省略字段则保留原数据，便于编辑页一次性保存。
+    qualifications: Optional[List[QualificationCreate]] = None
+    resources: Optional[ResourceCreate] = None
+    business: Optional[BusinessCreate] = None
+    operations: Optional[OperationCreate] = None
+    contacts: Optional[List[ContactCreate]] = None
 
 
 class BaseListOut(BaseModel):
@@ -264,6 +297,31 @@ class BaseDetailOut(BaseModel):
     contacts: List[ContactOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+
+class PublicBaseDetailOut(BaseModel):
+    """访客可读取的基地详情，刻意排除提交、审核和联系人隐私字段。"""
+
+    id: int
+    name: str
+    province: str
+    city: str
+    district: Optional[str]
+    address: str
+    longitude: Optional[Decimal]
+    latitude: Optional[Decimal]
+    established_date: Optional[date]
+    total_area: Optional[Decimal]
+    forest_coverage: Optional[Decimal]
+    description: Optional[str]
+    tags: Optional[str] = None
+    view_count: int
+    updated_at: datetime
+    qualifications: List[PublicQualificationOut] = Field(default_factory=list)
+    resources: Optional[ResourceOut] = None
+    business: Optional[BusinessOut] = None
+    operations: Optional[OperationOut] = None
+    media: List[PublicMediaOut] = Field(default_factory=list)
 
 
 class BaseReview(BaseModel):

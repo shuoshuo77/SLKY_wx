@@ -9,7 +9,7 @@ defineProps({
 })
 
 const chatText = defineModel("chatText", { type: String, default: "" })
-const emit = defineEmits(["go", "openDetail", "sendMessage"])
+const emit = defineEmits(["go", "openDetail", "sendMessage", "clearChat", "notify"])
 
 function go(target) {
   emit("go", target)
@@ -29,7 +29,7 @@ function openDetail(base) {
     <header class="page-header">
       <button @click="go('home')"><ArrowLeft /></button>
       <h1>智能助手</h1>
-      <button><Settings /></button>
+      <button aria-label="清空对话" @click="emit('clearChat')"><Settings /></button>
     </header>
 
     <section class="chat-list">
@@ -65,7 +65,7 @@ function openDetail(base) {
         placeholder="输入你的问题..."
         @keyup.enter="sendMessage()"
       >
-      <Mic />
+      <button class="voice-trigger" type="button" aria-label="语音输入" @click="emit('notify', '当前版本暂不支持语音输入，请使用文字提问。')"><Mic /></button>
       <button :disabled="isSending || !chatText.trim()" @click="sendMessage()"><Send /></button>
     </div>
   </div>

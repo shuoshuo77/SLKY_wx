@@ -3,7 +3,19 @@ import { computed, onMounted, ref, watch } from "vue"
 import {
   Bot, Home, Leaf, MapPinned, Mountain, ThermometerSun, Trees, UserRound
 } from "lucide-vue-next"
-import { apiRequest, ensureLogin, currentUser, miniappChat, resolveApiAsset } from "./api"
+import {
+  apiRequest,
+  AUTH_REQUIRED,
+  clearSession,
+  currentUser,
+  ensureLogin,
+  isAuthenticated,
+  login,
+  miniappChat,
+  refreshCurrentUser,
+  register,
+  resolveApiAsset
+} from "./api"
 import HomePage from "./pages/HomePage.vue"
 import BasesPage from "./pages/BasesPage.vue"
 import DetailPage from "./pages/DetailPage.vue"
@@ -59,6 +71,16 @@ const stats = ref({ favorites: 0, appointments: 0, history: 0 })
 const profileUser = ref(currentUser() || {})
 const toast = ref("")
 let toastTimer = null
+const authDialog = ref(false)
+const authMode = ref("login")
+const authSubmitting = ref(false)
+const authError = ref("")
+const authForm = ref({ username: "", password: "", confirmPassword: "", phone: "", realName: "" })
+const feedbackDialog = ref(false)
+const feedbackText = ref("")
+const feedbackSubmitting = ref(false)
+const infoDialog = ref(null)
+const settingsDialog = ref(false)
 
 function showToast(text) {
   toast.value = text
@@ -67,14 +89,150 @@ function showToast(text) {
 }
 
 async function withAuth(fn) {
-  await ensureLogin()
-  profileUser.value = currentUser() || {}
   try {
+    await ensureLogin()
+    profileUser.value = currentUser() || {}
     return await fn()
   } catch (err) {
+    if (err.code === AUTH_REQUIRED) openAuth("login")
     showToast(err.message || "操作失败")
     throw err
   }
+}
+
+function openAuth(mode = "login") {
+  authMode.value = mode
+  authError.value = ""
+  authForm.value.password = ""
+  authForm.value.confirmPassword = ""
+  authDialog.value = true
+}
+
+function switchAuthMode(mode) {
+  authMode.value = mode
+  authError.value = ""
+  authForm.value.password = ""
+  authForm.value.confirmPassword = ""
+}
+
+async function submitAuth() {
+  const username = authForm.value.username.trim()
+  const password = authForm.value.password
+  if (!username || !password) {
+    authError.value = "请填写用户名和密码"
+    return
+  }
+  if (authMode.value === "register") {
+    if (password !== authForm.value.confirmPassword) {
+      authError.value = "两次输入的密码不一致"
+      return
+    }
+    if (password.length < 10 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      authError.value = "密码至少 10 位，并同时包含字母和数字"
+      return
+    }
+  }
+  authSubmitting.value = true
+  authError.value = ""
+  try {
+    if (authMode.value === "login") {
+      await login({ username, password })
+      profileUser.value = await refreshCurrentUser()
+      authDialog.value = false
+      showToast("登录成功")
+      await Promise.all([loadStats(), loadFavorites(), loadAppointments(), loadHistory()])
+    } else {
+      await register({
+        username,
+        password,
+        phone: authForm.value.phone.trim() || undefined,
+        real_name: authForm.value.realName.trim() || undefined
+      })
+      authForm.value.password = ""
+      authForm.value.confirmPassword = ""
+      authForm.value.phone = ""
+      authForm.value.realName = ""
+      switchAuthMode("login")
+      showToast("注册成功，请使用新账号登录")
+    }
+  } catch (err) {
+    authError.value = err.message || (authMode.value === "login" ? "登录失败" : "注册失败")
+  } finally {
+    authSubmitting.value = false
+  }
+}
+
+function logout() {
+  clearSession()
+  settingsDialog.value = false
+  profileUser.value = {}
+  favorites.value = []
+  favoriteItems.value = []
+  history.value = []
+  appointments.value = []
+  stats.value = { favorites: 0, appointments: 0, history: 0 }
+  showToast("已退出登录")
+}
+
+function showNotifications() {
+  showToast("暂无未读消息")
+}
+
+function openFeedback() {
+  if (!isAuthenticated()) {
+    showToast("登录后可以提交意见反馈")
+    openAuth("login")
+    return
+  }
+  feedbackDialog.value = true
+}
+
+async function submitFeedback() {
+  const content = feedbackText.value.trim()
+  if (content.length < 5) {
+    showToast("请至少填写 5 个字")
+    return
+  }
+  feedbackSubmitting.value = true
+  try {
+    await withAuth(() => apiRequest("/demands", { method: "POST", body: { feedback: content } }))
+    feedbackText.value = ""
+    feedbackDialog.value = false
+    showToast("反馈已提交，感谢你的建议")
+  } catch (err) {
+    if (err.code === AUTH_REQUIRED) feedbackDialog.value = false
+  } finally {
+    feedbackSubmitting.value = false
+  }
+}
+
+function openAbout() {
+  infoDialog.value = {
+    title: "关于森氧康养",
+    text: "森氧康养帮助你查找森林康养基地、查看环境信息并提交参访预约。"
+  }
+}
+
+function openReviews() {
+  infoDialog.value = {
+    title: "我的评价",
+    text: "暂时还没有可展示的评价。你可以通过“意见反馈”告诉我们使用感受。",
+    action: "feedback"
+  }
+}
+
+function handleInfoAction() {
+  const action = infoDialog.value?.action
+  infoDialog.value = null
+  if (action === "feedback") openFeedback()
+}
+
+function openSettings() {
+  if (!isAuthenticated()) {
+    openAuth("login")
+    return
+  }
+  settingsDialog.value = true
 }
 
 function normalizeHistoryItem(item) {
@@ -129,6 +287,11 @@ async function toggleFavorite(base) {
 const favoriteBases = favoriteItems
 
 async function loadFavorites() {
+  if (!isAuthenticated()) {
+    favoriteItems.value = []
+    favorites.value = []
+    return
+  }
   const data = await withAuth(() => apiRequest("/miniapp/me/favorites"))
   favoriteItems.value = (data.items || []).map((item) => ({
     id: item.base_id,
@@ -143,9 +306,9 @@ async function loadFavorites() {
 
 /* ---------- 浏览记录 ---------- */
 async function recordView(base) {
+  if (!isAuthenticated()) return
   try {
-    await ensureLogin()
-    await apiRequest(`/miniapp/bases/${base.id}/view`, { method: "POST" })
+    await withAuth(() => apiRequest(`/miniapp/bases/${base.id}/view`, { method: "POST" }))
     history.value = [
       { id: base.id, name: base.name, area: base.area, image: base.image, ts: Date.now() },
       ...history.value.filter((h) => h.id !== base.id)
@@ -168,6 +331,10 @@ function timeText(ts) {
 }
 
 async function loadHistory() {
+  if (!isAuthenticated()) {
+    history.value = []
+    return
+  }
   const data = await withAuth(() => apiRequest("/miniapp/me/history"))
   history.value = (data.items || []).map(normalizeHistoryItem)
 }
@@ -184,6 +351,8 @@ const showBooking = ref(false)
 const bookingError = ref("")
 const booking = ref({ date: "", time: "", people: 1, name: "", phone: "" })
 const cancelTarget = ref(null)
+const bookingSubmitting = ref(false)
+const appointmentRequestKey = ref("")
 
 const today = computed(() => {
   const d = new Date()
@@ -205,11 +374,13 @@ function activeBooking(baseId) {
 
 function openBookingSheet() {
   booking.value = { date: today.value, time: "", people: 1, name: "", phone: "" }
+  appointmentRequestKey.value = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
   bookingError.value = ""
   showBooking.value = true
 }
 
 async function confirmBooking() {
+  if (bookingSubmitting.value) return
   if (!booking.value.date || !booking.value.time) {
     bookingError.value = "请选择参访日期和时间段"
     return
@@ -218,6 +389,7 @@ async function confirmBooking() {
     bookingError.value = "请填写联系人和联系电话"
     return
   }
+  bookingSubmitting.value = true
   try {
     const item = await withAuth(() =>
       apiRequest("/miniapp/me/appointments", {
@@ -229,7 +401,8 @@ async function confirmBooking() {
           people_count: booking.value.people,
           contact_name: booking.value.name.trim(),
           contact_phone: booking.value.phone.trim()
-        }
+        },
+        headers: { "Idempotency-Key": appointmentRequestKey.value }
       })
     )
     appointments.value.unshift(normalizeAppointment(item))
@@ -237,6 +410,8 @@ async function confirmBooking() {
     showToast("预约提交成功，待基地确认")
   } catch {
     /* 错误提示已由 withAuth 处理 */
+  } finally {
+    bookingSubmitting.value = false
   }
 }
 
@@ -260,11 +435,19 @@ async function doCancel() {
 }
 
 async function loadAppointments() {
+  if (!isAuthenticated()) {
+    appointments.value = []
+    return
+  }
   const data = await withAuth(() => apiRequest("/miniapp/me/appointments"))
   appointments.value = (data.items || []).map(normalizeAppointment)
 }
 
 async function loadStats() {
+  if (!isAuthenticated()) {
+    stats.value = { favorites: 0, appointments: 0, history: 0 }
+    return
+  }
   try {
     const data = await withAuth(() => apiRequest("/miniapp/me/stats"))
     stats.value = data
@@ -381,8 +564,8 @@ async function loadAll() {
     const [allBases, home, map, recommendations, provinces] = await Promise.all([
       loadAllBases(),
       apiRequest("/miniapp/home?limit=10"),
-      apiRequest("/map/bases?limit=200"),
-      apiRequest("/recommend?limit=10"),
+      apiRequest("/miniapp/map/bases?page_size=200"),
+      apiRequest("/miniapp/recommendations?limit=10"),
       apiRequest("/bases/provinces")
     ])
     bases.value = allBases
@@ -404,7 +587,7 @@ async function loadAllBases({ keyword = "", province = "" } = {}) {
   const query = new URLSearchParams({ page: "1", page_size: "100", sort_by: "view_count", sort_order: "desc" })
   if (keyword.trim()) query.set("keyword", keyword.trim())
   if (province) query.set("province", province)
-  const first = await apiRequest(`/bases?${query}`)
+  const first = await apiRequest(`/bases/?${query}`)
   const items = [...(first.items || [])]
   const totalPages = Math.ceil((first.total || 0) / 100)
   if (totalPages > 1) {
@@ -412,7 +595,7 @@ async function loadAllBases({ keyword = "", province = "" } = {}) {
       Array.from({ length: totalPages - 1 }, (_, i) => {
         const pageQuery = new URLSearchParams(query)
         pageQuery.set("page", String(i + 2))
-        return apiRequest(`/bases?${pageQuery}`)
+        return apiRequest(`/bases/?${pageQuery}`)
       })
     )
     for (const page of rest) items.push(...(page.items || []))
@@ -420,7 +603,21 @@ async function loadAllBases({ keyword = "", province = "" } = {}) {
   return items.map(mapCard)
 }
 
-onMounted(loadAll)
+async function restoreProfile() {
+  if (!isAuthenticated()) return
+  try {
+    profileUser.value = await refreshCurrentUser()
+  } catch (err) {
+    if (err.code !== AUTH_REQUIRED) return
+    clearSession()
+    profileUser.value = {}
+  }
+}
+
+onMounted(() => {
+  loadAll()
+  restoreProfile()
+})
 
 /* ---------- 通用 ---------- */
 const filteredBases = computed(() => {
@@ -450,6 +647,23 @@ const { page, go } = usePageNavigation({
   loadHistory
 })
 const route = useRoute()
+
+function openMapFilter() {
+  go("bases")
+  showToast("可按关键词和省份筛选基地")
+}
+
+function clearAssistantConversation() {
+  if (assistantSending.value) {
+    showToast("正在生成回复，请稍候")
+    return
+  }
+  chatText.value = ""
+  assistantConversationId.value = ""
+  assistantError.value = ""
+  messages.value = [{ role: "bot", text: "你好！我是森氧康养智能助手，很高兴为你服务。" }]
+  showToast("已清空本次对话")
+}
 
 async function loadDetailById(id, shouldNavigate = false) {
   if (!id) return
@@ -486,6 +700,11 @@ watch(
 async function sendMessage(text = chatText.value) {
   const value = text.trim()
   if (!value || assistantSending.value) return
+  if (!isAuthenticated()) {
+    assistantError.value = "请先登录后使用智能咨询"
+    openAuth("login")
+    return
+  }
   messages.value.push({ role: "user", text: value })
   chatText.value = ""
   assistantSending.value = true
@@ -499,7 +718,7 @@ async function sendMessage(text = chatText.value) {
         role: message.role === "bot" ? "assistant" : "user",
         content: message.text
       }))
-    const data = await miniappChat(value, { sessionId: assistantConversationId.value, history })
+    const data = await withAuth(() => miniappChat(value, { sessionId: assistantConversationId.value, history }))
     assistantConversationId.value = data.session_id || assistantConversationId.value
     messages.value.push({ role: "bot", text: data.reply || "智能助手暂时没有返回内容。" })
   } catch (err) {
@@ -528,6 +747,8 @@ async function sendMessage(text = chatText.value) {
           @go="go"
           @open-detail="openDetail"
           @toggle-favorite="toggleFavorite"
+          @notifications="showNotifications"
+          @settings="openSettings"
         />
         <BasesPage
           v-else-if="page === 'bases'"
@@ -557,8 +778,9 @@ async function sendMessage(text = chatText.value) {
           :map-bases="mapBases"
           @go="go"
           @open-detail="openDetail"
+          @open-filter="openMapFilter"
         />
-        <MonitorPage v-else-if="page === 'monitor'" @go="go" />
+        <MonitorPage v-else-if="page === 'monitor'" @go="go" @notify="showToast" />
         <AssistantPage
           v-else-if="page === 'assistant'"
           v-model:chat-text="chatText"
@@ -569,6 +791,8 @@ async function sendMessage(text = chatText.value) {
           @go="go"
           @open-detail="openDetail"
           @send-message="sendMessage"
+          @clear-chat="clearAssistantConversation"
+          @notify="showToast"
         />
         <FavoritesPage
           v-else-if="page === 'favorites'"
@@ -597,9 +821,77 @@ async function sendMessage(text = chatText.value) {
           v-else-if="page === 'profile'"
           :profile-user="profileUser"
           :stats="stats"
+          :is-authenticated="isAuthenticated()"
           @go="go"
+          @login="openAuth('login')"
+          @logout="logout"
+          @notifications="showNotifications"
+          @feedback="openFeedback"
+          @about="openAbout"
+          @settings="openSettings"
+          @reviews="openReviews"
         />
       </main>
+
+      <div v-if="authDialog" class="sheet-mask" @click.self="authDialog = false">
+        <form class="auth-sheet" novalidate @submit.prevent="submitAuth">
+          <div class="sheet-handle"></div>
+          <div class="auth-top">
+            <div class="auth-welcome"><span><Leaf/></span><div><p>森氧康养</p><h2>{{ authMode === 'login' ? '欢迎回来' : '创建账号' }}</h2></div></div>
+            <button class="auth-close" type="button" @click="authDialog = false">关闭</button>
+          </div>
+          <div class="auth-tabs" role="tablist" aria-label="认证方式">
+            <button type="button" :class="{ active: authMode === 'login' }" @click="switchAuthMode('login')">登录</button>
+            <button type="button" :class="{ active: authMode === 'register' }" @click="switchAuthMode('register')">注册</button>
+          </div>
+          <p class="sheet-sub">{{ authMode === 'login' ? '登录后可独立保存收藏、预约和浏览记录。' : '注册成功后，请使用新账号登录。' }}</p>
+          <label class="field"><span>用户名</span><input v-model="authForm.username" autocomplete="username" minlength="3" maxlength="50" placeholder="3 至 50 个字符"></label>
+          <label class="field"><span>密码</span><input v-model="authForm.password" type="password" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" minlength="10" maxlength="100" placeholder="至少 10 位，含字母和数字"></label>
+          <template v-if="authMode === 'register'">
+            <label class="field"><span>确认密码</span><input v-model="authForm.confirmPassword" type="password" autocomplete="new-password" minlength="10" maxlength="100" placeholder="请再次输入密码"></label>
+            <label class="field"><span>手机号（选填）</span><input v-model="authForm.phone" type="tel" autocomplete="tel" maxlength="20" placeholder="便于后续联系"></label>
+            <label class="field"><span>昵称（选填）</span><input v-model="authForm.realName" autocomplete="name" maxlength="50" placeholder="在个人中心展示"></label>
+          </template>
+          <p v-if="authError" class="field-error">{{ authError }}</p>
+          <button type="submit" class="auth-primary" :disabled="authSubmitting">{{ authSubmitting ? '请稍候…' : authMode === 'login' ? '登录' : '注册' }}</button>
+          <p class="auth-switch">{{ authMode === 'login' ? '还没有账号？' : '已有账号？' }}<button type="button" @click="switchAuthMode(authMode === 'login' ? 'register' : 'login')">{{ authMode === 'login' ? '立即注册' : '立即登录' }}</button></p>
+        </form>
+      </div>
+
+      <div v-if="feedbackDialog" class="sheet-mask" @click.self="feedbackDialog = false">
+        <form class="booking-sheet feedback-sheet" @submit.prevent="submitFeedback">
+          <div class="sheet-handle"></div>
+          <h2>意见反馈</h2>
+          <p class="sheet-sub">你的建议会提交到项目后台，帮助我们持续改进。</p>
+          <label class="field"><span>反馈内容</span><textarea v-model="feedbackText" minlength="5" maxlength="1000" placeholder="请描述你遇到的问题或建议（至少 5 个字）"></textarea></label>
+          <div class="sheet-actions">
+            <button type="button" class="sheet-cancel" @click="feedbackDialog = false">取消</button>
+            <button type="submit" class="sheet-confirm" :disabled="feedbackSubmitting">{{ feedbackSubmitting ? '提交中…' : '提交反馈' }}</button>
+          </div>
+        </form>
+      </div>
+
+      <div v-if="infoDialog" class="sheet-mask" @click.self="infoDialog = null">
+        <div class="confirm-sheet">
+          <h2>{{ infoDialog.title }}</h2>
+          <p>{{ infoDialog.text }}</p>
+          <div class="sheet-actions">
+            <button class="sheet-cancel" @click="infoDialog = null">关闭</button>
+            <button v-if="infoDialog.action" class="sheet-confirm" @click="handleInfoAction">去反馈</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="settingsDialog" class="sheet-mask" @click.self="settingsDialog = false">
+        <div class="confirm-sheet">
+          <h2>设置</h2>
+          <p>当前登录账号：{{ profileUser.real_name || profileUser.username }}。退出登录后，本机保存的登录状态会被清除。</p>
+          <div class="sheet-actions">
+            <button class="sheet-cancel" @click="settingsDialog = false">取消</button>
+            <button class="sheet-danger" @click="logout">退出登录</button>
+          </div>
+        </div>
+      </div>
 
       <div v-if="showBooking" class="sheet-mask" @click.self="showBooking = false">
         <div class="booking-sheet">
@@ -626,7 +918,7 @@ async function sendMessage(text = chatText.value) {
           <p v-if="bookingError" class="field-error">{{ bookingError }}</p>
           <div class="sheet-actions">
             <button class="sheet-cancel" @click="showBooking = false">取消</button>
-            <button class="sheet-confirm" @click="confirmBooking">确认预约</button>
+            <button class="sheet-confirm" :disabled="bookingSubmitting" @click="confirmBooking">{{ bookingSubmitting ? '提交中…' : '确认预约' }}</button>
           </div>
         </div>
       </div>

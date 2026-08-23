@@ -88,6 +88,11 @@ class KeywordOut(BaseModel):
         from_attributes = True
 
 
+class KeywordListOut(BaseModel):
+    total: int
+    items: List[KeywordOut]
+
+
 # ---- 文章 ----
 class ArticleOut(BaseModel):
     id: int
@@ -168,3 +173,10 @@ class TaskOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class TaskListOut(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: List[TaskOut]

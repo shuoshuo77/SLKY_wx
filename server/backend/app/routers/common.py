@@ -16,6 +16,7 @@ from app.models.other import Favorite, Notification
 from app.schemas.other import (
     FavoriteCreate, FavoriteOut, NotificationOut, PaginatedNotifications,
 )
+from app.schemas.common import UploadOut
 from app.config import get_settings
 
 settings = get_settings()
@@ -24,7 +25,7 @@ router = APIRouter(prefix="/api", tags=["通用功能"])
 
 # ===================== 收藏 =====================
 
-@router.get("/favorites", response_model=list[FavoriteOut], summary="我的收藏")
+@router.get("/favorites", response_model=list[FavoriteOut], deprecated=True, summary="旧版通用收藏列表")
 def list_favorites(
     fav_type: str = Query(None),
     current_user: User = Depends(get_current_user),
@@ -36,7 +37,7 @@ def list_favorites(
     return [FavoriteOut.model_validate(f) for f in q.order_by(desc(Favorite.created_at)).all()]
 
 
-@router.post("/favorites", status_code=201, summary="添加收藏")
+@router.post("/favorites", status_code=201, deprecated=True, summary="旧版通用添加收藏")
 def add_favorite(
     req: FavoriteCreate,
     current_user: User = Depends(get_current_user),
@@ -56,27 +57,21 @@ def add_favorite(
     return {"message": "收藏成功", "id": fav.id}
 
 
-@router.post("/favorites/{fav_id}/toggle", summary="切换收藏(收藏/取消)")
-def toggle_favorite(
+@router.delete("/favorites/{fav_id}", summary="删除通用收藏")
+def delete_favorite(
     fav_id: int,
-    req: FavoriteCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     existing = db.query(Favorite).filter(
+        Favorite.id == fav_id,
         Favorite.user_id == current_user.id,
-        Favorite.fav_type == req.fav_type,
-        Favorite.fav_id == req.fav_id,
     ).first()
-    if existing:
-        db.delete(existing)
-        db.commit()
-        return {"message": "已取消收藏", "favorited": False}
-    else:
-        fav = Favorite(user_id=current_user.id, fav_type=req.fav_type, fav_id=req.fav_id)
-        db.add(fav)
-        db.commit()
-        return {"message": "收藏成功", "favorited": True}
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="收藏不存在")
+    db.delete(existing)
+    db.commit()
+    return {"message": "收藏已删除"}
 
 
 # ===================== 通知 =====================
@@ -129,7 +124,7 @@ def read_notification(
 
 # ===================== 文件上传 =====================
 
-@router.post("/upload", summary="文件上传")
+@router.post("/upload", response_model=UploadOut, summary="文件上传")
 async def upload_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),

@@ -15,6 +15,26 @@ depends_on = None
 
 
 def upgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        inspector = sa.inspect(op.get_bind())
+        required_columns = {
+            "forest_bases": {"tags", "source_url"},
+            "base_resources": {"average_temperature"},
+            "base_business": {"partner_institutions", "investment_needs"},
+            "natural_resources": {"address", "health_value", "traffic_accessibility", "development_status", "resource_details", "source_url"},
+            "industry_data": {"metric_value", "metric_unit", "growth_rate", "sort_order"},
+            "policies": {"applicable_region"},
+            "experts": {"expert_type", "region", "years_experience", "resume_url", "profile_data"},
+        }
+        tables = set(inspector.get_table_names())
+        if {"banners", "featured_services"}.issubset(tables) and all(
+            expected.issubset({column["name"] for column in inspector.get_columns(table)})
+            for table, expected in required_columns.items()
+        ):
+            # A new SQLite database is already created from the current ORM
+            # metadata by revision 0001, including these extension fields.
+            return
+
     op.create_table(
         "banners",
         sa.Column("id", mysql.BIGINT(unsigned=True), primary_key=True, autoincrement=True),

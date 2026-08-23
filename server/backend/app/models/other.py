@@ -212,6 +212,7 @@ class BaseAppointment(Base):
     __table_args__ = (
         Index("idx_appt_user_status_date", "user_id", "status", "visit_date"),
         Index("idx_appt_base_id", "base_id"),
+        UniqueConstraint("user_id", "idempotency_key", name="uq_appointment_user_idempotency"),
     )
 
     id = Column(ID_TYPE, primary_key=True, autoincrement=True)
@@ -223,10 +224,12 @@ class BaseAppointment(Base):
     contact_name = Column(String(50), nullable=False)
     contact_phone = Column(String(30), nullable=False)
     status = Column(
-        Enum("pending", "confirmed", "cancelled"),
+        Enum("pending", "confirmed", "cancelled", "rejected"),
         nullable=False,
         default="pending",
     )
+    idempotency_key = Column(String(128), nullable=True)
+    status_note = Column(String(500), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
     updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
 

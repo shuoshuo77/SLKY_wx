@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
     DEEPSEEK_MODEL: str = "deepseek-chat"
     DEEPSEEK_TIMEOUT_SECONDS: int = 30
+    CHAT_RATE_LIMIT: int = 10
+    CHAT_RATE_WINDOW_SECONDS: int = 300
+    CHAT_MAX_OUTPUT_TOKENS: int = 600
 
     @property
     def cors_origins(self) -> list[str]:

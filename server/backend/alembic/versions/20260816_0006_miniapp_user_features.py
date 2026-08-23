@@ -20,6 +20,12 @@ def _id_column():
 
 
 def upgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        tables = set(sa.inspect(op.get_bind()).get_table_names())
+        if {"base_appointments", "base_browse_history"}.issubset(tables):
+            # Revision 0001 creates the current ORM schema for a fresh SQLite
+            # database, so these tables already exist in that path.
+            return
     op.create_table(
         "base_appointments",
         sa.Column("id", _id_column(), primary_key=True, autoincrement=True),
