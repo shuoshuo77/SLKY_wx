@@ -3,11 +3,10 @@ import { Bell, CalendarDays, ChevronRight, CircleUserRound, Heart, MapPinned, Me
 
 defineProps({
   profileUser: { type: Object, required: true },
-  stats: { type: Object, required: true },
-  isAuthenticated: { type: Boolean, default: false }
+  stats: { type: Object, required: true }
 })
 
-const emit = defineEmits(["go", "login", "logout", "notifications", "feedback", "about", "settings", "reviews"])
+const emit = defineEmits(["go", "notifications", "feedback", "about", "settings", "reviews"])
 function go(target) { emit("go", target) }
 </script>
 
@@ -15,11 +14,10 @@ function go(target) { emit("go", target) }
           <header class="profile-head">
             <div class="profile-avatar"><UserRound/></div>
             <div class="profile-summary">
-              <h1>{{ profileUser.real_name || profileUser.username || '未登录' }}</h1>
-              <p>{{ isAuthenticated ? `ID: ${profileUser.id}` : '登录后可独立保存个人数据' }}</p>
+              <h1>{{ profileUser.real_name || profileUser.username || '森氧用户' }}</h1>
+              <p>账号功能已关闭</p>
             </div>
             <div class="profile-actions">
-              <button class="profile-auth" @click="isAuthenticated ? emit('logout') : emit('login')">{{ isAuthenticated ? '退出' : '登录' }}</button>
               <button class="profile-icon" type="button" aria-label="消息通知" @click="emit('notifications')"><Bell/></button>
               <button class="profile-icon" type="button" aria-label="设置" @click="emit('settings')"><Settings/></button>
             </div>
