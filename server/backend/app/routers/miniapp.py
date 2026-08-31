@@ -1,8 +1,10 @@
 """微信小程序首页、推荐、地图与智能体接口。"""
 from __future__ import annotations
 
+import logging
 from math import asin, cos, radians, sin, sqrt
 from time import sleep
+from urllib.parse import quote
 from uuid import uuid4
 
 import requests
@@ -12,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_optional_user
 from app.models.base import ForestBase
 from app.models.other import Expert, NaturalResource, Policy
 from app.models.user import User
@@ -29,6 +31,7 @@ from app.utils.rate_limit import client_ip, rate_limiter
 
 router = APIRouter(prefix="/api", tags=["微信小程序"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 _QUICK_QUESTIONS = [
     "推荐适合避暑的森林康养基地",
@@ -92,17 +95,20 @@ def _coze_base_url() -> str:
 
 
 def _coze_request(url: str, *, method: str = "GET", json: dict | None = None) -> dict:
-    response = requests.request(
-        method,
-        url,
-        headers={
-            "Authorization": f"Bearer {settings.COZE_API_TOKEN}",
-            "Content-Type": "application/json",
-        },
-        json=json,
-        timeout=settings.DEEPSEEK_TIMEOUT_SECONDS,
-    )
-    data = response.json() if response.content else {}
+    try:
+        response = requests.request(
+            method,
+            url,
+            headers={
+                "Authorization": f"Bearer {settings.COZE_API_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            json=json,
+            timeout=settings.DEEPSEEK_TIMEOUT_SECONDS,
+        )
+        data = response.json() if response.content else {}
+    except ValueError as exc:
+        raise requests.RequestException("Coze returned invalid JSON") from exc
     if not response.ok or data.get("code") not in (None, 0):
         message = data.get("msg") or data.get("message") or data.get("error") or f"Coze request failed ({response.status_code})"
         raise requests.RequestException(message)
@@ -113,14 +119,31 @@ def _coze_answer_from_messages(data: dict) -> str:
     messages = data.get("data") if isinstance(data.get("data"), list) else []
     answer = next((item for item in messages if item.get("role") == "assistant" and item.get("type") == "answer"), None)
     if not answer:
-        answer = next((item for item in messages if item.get("role") == "assistant"), None)
+        answer = next(
+            (
+                item
+                for item in messages
+                if item.get("role") == "assistant" and item.get("content")
+            ),
+            None,
+        )
     return (answer or {}).get("content", "").strip()
 
 
 def _local_chat_reply(message: str) -> str:
     normalized = "".join(message.split())
+    if "项目" in normalized or "功能" in normalized or "怎么用" in normalized:
+        return "森氧康养平台主要用于查看森林康养基地、热门推荐、地图找基地、环境监测、收藏、浏览记录和预约参访。你可以先从首页推荐或基地列表开始浏览。"
+    if "登录" in normalized or "注册" in normalized:
+        return "智能咨询可以直接使用；收藏、预约和浏览记录属于个人功能，需要先在“我的”页面登录或注册。"
     if "预约" in normalized or "参访" in normalized:
         return "可以预约参访。进入基地详情页后，点击“预约参访”，选择日期、时间段、人数并填写联系人信息即可提交。"
+    if "收藏" in normalized:
+        return "进入基地详情页或基地卡片后，可以点击收藏按钮保存感兴趣的基地。收藏内容会在“我的-我的收藏”里查看。"
+    if "地图" in normalized or "附近" in normalized:
+        return "可以进入地图页面查看基地分布，也可以回到基地列表按省份和关键词筛选，再进入详情查看地址和服务信息。"
+    if "监测" in normalized or "环境" in normalized:
+        return "环境监测页面用于查看康养相关环境指标展示。实际上线时需要接入真实监测数据源或后端接口。"
     if "避暑" in normalized or "夏季" in normalized:
         return "夏季避暑可以优先查看森林覆盖率高、海拔较高或靠近山地水系的基地。你可以在基地列表里按地区筛选，再进入详情查看环境与服务信息。"
     if "广东" in normalized:
@@ -132,7 +155,7 @@ def _local_chat_reply(message: str) -> str:
 
 def _chat_with_coze(req: MiniAppChatRequest, session_id: str) -> str:
     if not settings.COZE_API_TOKEN or not settings.COZE_BOT_ID:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="智能咨询服务尚未配置")
+        raise requests.RequestException("Coze is not configured")
 
     create_data = _coze_request(
         settings.COZE_API_URL,
@@ -163,7 +186,7 @@ def _chat_with_coze(req: MiniAppChatRequest, session_id: str) -> str:
             break
         sleep(settings.COZE_POLL_INTERVAL_SECONDS)
         retrieve_data = _coze_request(
-            f"{base_url}/v3/chat/retrieve?conversation_id={conversation_id}&chat_id={chat_id}"
+            f"{base_url}/v3/chat/retrieve?conversation_id={quote(str(conversation_id))}&chat_id={quote(str(chat_id))}"
         )
         status_text = (retrieve_data.get("data") or {}).get("status") or retrieve_data.get("status") or status_text
 
@@ -171,9 +194,12 @@ def _chat_with_coze(req: MiniAppChatRequest, session_id: str) -> str:
         raise requests.RequestException("Coze chat failed")
 
     message_data = _coze_request(
-        f"{base_url}/v3/chat/message/list?conversation_id={conversation_id}&chat_id={chat_id}"
+        f"{base_url}/v3/chat/message/list?conversation_id={quote(str(conversation_id))}&chat_id={quote(str(chat_id))}"
     )
-    return _coze_answer_from_messages(message_data) or "智能助手暂时没有返回内容。"
+    reply = _coze_answer_from_messages(message_data)
+    if not reply:
+        raise requests.RequestException("Coze returned an empty answer")
+    return reply
 
 
 def _chat_with_deepseek(req: MiniAppChatRequest) -> str:
@@ -194,7 +220,20 @@ def _chat_with_deepseek(req: MiniAppChatRequest) -> str:
         timeout=settings.DEEPSEEK_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"].strip()
+    reply = response.json()["choices"][0]["message"]["content"].strip()
+    if not reply:
+        raise requests.RequestException("DeepSeek returned an empty answer")
+    return reply
+
+
+def _chat_response(session_id: str, reply: str, provider: str) -> dict:
+    return {
+        "session_id": session_id,
+        "reply": reply,
+        "provider": provider,
+        "suggestions": _QUICK_QUESTIONS,
+        "disclaimer": "健康建议仅供参考，不替代医生诊断或治疗。",
+    }
 
 
 def _approved_bases(db: Session):
@@ -346,65 +385,31 @@ def map_bases(
 def miniapp_chat(
     req: MiniAppChatRequest,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
 ):
-    """调用 DeepSeek 兼容接口，并按用户和来源限制成本暴露。"""
+    """调用在线智能体；在线服务不可用时返回本地兜底答复。"""
     rate_limiter.check(
-        f"chat:{current_user.id}:{client_ip(request)}",
+        f"chat:{current_user.id if current_user else 'anonymous'}:{client_ip(request)}",
         settings.CHAT_RATE_LIMIT,
         settings.CHAT_RATE_WINDOW_SECONDS,
     )
     session_id = req.session_id or uuid4().hex
-    if not settings.DEEPSEEK_API_KEY and settings.COZE_API_TOKEN:
-        provider = "coze"
+
+    if settings.COZE_API_TOKEN and settings.COZE_BOT_ID:
         try:
             reply = _chat_with_coze(req, session_id)
+            return _chat_response(session_id, reply, "coze")
         except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as exc:
-            reply = _local_chat_reply(req.message)
-            provider = "local"
+            logger.warning("Coze chat fallback triggered: %s", exc)
 
-        return {
-            "session_id": session_id,
-            "reply": reply,
-            "provider": provider,
-            "suggestions": _QUICK_QUESTIONS,
-            "disclaimer": "健康建议仅供参考，不替代医生诊断或治疗。",
-        }
-    if not settings.DEEPSEEK_API_KEY:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="智能咨询服务尚未配置")
+    if settings.DEEPSEEK_API_KEY:
+        try:
+            reply = _chat_with_deepseek(req)
+            return _chat_response(session_id, reply, "deepseek")
+        except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as exc:
+            logger.warning("DeepSeek chat fallback triggered: %s", exc)
 
-    messages = [
-        {
-            "role": "system",
-            "content": "你是森林康养平台助手。只提供一般性康养、基地筛选和平台使用建议；健康问题请提示用户咨询专业医生。回答简洁、友好，使用中文。",
-        },
-        *[message.model_dump() for message in req.history[-20:]],
-        {"role": "user", "content": req.message},
-    ]
-    try:
-        response = requests.post(
-            f"{settings.DEEPSEEK_BASE_URL.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}"},
-            json={
-                "model": settings.DEEPSEEK_MODEL,
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": settings.CHAT_MAX_OUTPUT_TOKENS,
-            },
-            timeout=settings.DEEPSEEK_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        reply = response.json()["choices"][0]["message"]["content"].strip()
-    except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="智能咨询暂时不可用，请稍后重试") from exc
-
-    return {
-        "session_id": session_id,
-        "reply": reply,
-        "provider": "deepseek",
-        "suggestions": _QUICK_QUESTIONS,
-        "disclaimer": "健康建议仅供参考，不替代医生诊断或治疗。",
-    }
+    return _chat_response(session_id, _local_chat_reply(req.message), "local")
 
 
 @router.get("/bases/list", response_model=PaginatedBases, include_in_schema=False)

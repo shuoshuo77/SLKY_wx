@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
 import {
-  Bot, Home, Leaf, MapPinned, Mountain, ThermometerSun, Trees, UserRound
+  Bot, Home, MapPinned, Mountain, ThermometerSun, Trees, UserRound
 } from "lucide-vue-next"
 import {
   apiRequest,
@@ -10,10 +10,8 @@ import {
   currentUser,
   ensureLogin,
   isAuthenticated,
-  login,
   miniappChat,
   refreshCurrentUser,
-  register,
   resolveApiAsset
 } from "./api"
 import HomePage from "./pages/HomePage.vue"
@@ -58,9 +56,7 @@ const assistantConversationId = ref("")
 const assistantSending = ref(false)
 const assistantError = ref("")
 const messages = ref([
-  { role: "bot", text: "你好！我是森氧康养智能助手，很高兴为你服务。" },
-  { role: "user", text: "推荐适合夏季避暑的基地" },
-  { role: "bot", text: "为你推荐青城山康养基地和庐山康养基地，它们气温舒适、空气质量优秀。" }
+  { role: "bot", text: "你好！我是森氧康养智能助手，很高兴为你服务。" }
 ])
 
 /* ---------- 后端数据：收藏 / 浏览记录 / 预约 ---------- */
@@ -71,11 +67,6 @@ const stats = ref({ favorites: 0, appointments: 0, history: 0 })
 const profileUser = ref(currentUser() || {})
 const toast = ref("")
 let toastTimer = null
-const authDialog = ref(false)
-const authMode = ref("login")
-const authSubmitting = ref(false)
-const authError = ref("")
-const authForm = ref({ username: "", password: "", confirmPassword: "", phone: "", realName: "" })
 const feedbackDialog = ref(false)
 const feedbackText = ref("")
 const feedbackSubmitting = ref(false)
@@ -94,84 +85,9 @@ async function withAuth(fn) {
     profileUser.value = currentUser() || {}
     return await fn()
   } catch (err) {
-    if (err.code === AUTH_REQUIRED) openAuth("login")
-    showToast(err.message || "操作失败")
+    showToast(err.code === AUTH_REQUIRED ? "账号功能暂未开放" : err.message || "操作失败")
     throw err
   }
-}
-
-function openAuth(mode = "login") {
-  authMode.value = mode
-  authError.value = ""
-  authForm.value.password = ""
-  authForm.value.confirmPassword = ""
-  authDialog.value = true
-}
-
-function switchAuthMode(mode) {
-  authMode.value = mode
-  authError.value = ""
-  authForm.value.password = ""
-  authForm.value.confirmPassword = ""
-}
-
-async function submitAuth() {
-  const username = authForm.value.username.trim()
-  const password = authForm.value.password
-  if (!username || !password) {
-    authError.value = "请填写用户名和密码"
-    return
-  }
-  if (authMode.value === "register") {
-    if (password !== authForm.value.confirmPassword) {
-      authError.value = "两次输入的密码不一致"
-      return
-    }
-    if (password.length < 10 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-      authError.value = "密码至少 10 位，并同时包含字母和数字"
-      return
-    }
-  }
-  authSubmitting.value = true
-  authError.value = ""
-  try {
-    if (authMode.value === "login") {
-      await login({ username, password })
-      profileUser.value = await refreshCurrentUser()
-      authDialog.value = false
-      showToast("登录成功")
-      await Promise.all([loadStats(), loadFavorites(), loadAppointments(), loadHistory()])
-    } else {
-      await register({
-        username,
-        password,
-        phone: authForm.value.phone.trim() || undefined,
-        real_name: authForm.value.realName.trim() || undefined
-      })
-      authForm.value.password = ""
-      authForm.value.confirmPassword = ""
-      authForm.value.phone = ""
-      authForm.value.realName = ""
-      switchAuthMode("login")
-      showToast("注册成功，请使用新账号登录")
-    }
-  } catch (err) {
-    authError.value = err.message || (authMode.value === "login" ? "登录失败" : "注册失败")
-  } finally {
-    authSubmitting.value = false
-  }
-}
-
-function logout() {
-  clearSession()
-  settingsDialog.value = false
-  profileUser.value = {}
-  favorites.value = []
-  favoriteItems.value = []
-  history.value = []
-  appointments.value = []
-  stats.value = { favorites: 0, appointments: 0, history: 0 }
-  showToast("已退出登录")
 }
 
 function showNotifications() {
@@ -179,11 +95,6 @@ function showNotifications() {
 }
 
 function openFeedback() {
-  if (!isAuthenticated()) {
-    showToast("登录后可以提交意见反馈")
-    openAuth("login")
-    return
-  }
   feedbackDialog.value = true
 }
 
@@ -195,12 +106,12 @@ async function submitFeedback() {
   }
   feedbackSubmitting.value = true
   try {
-    await withAuth(() => apiRequest("/demands", { method: "POST", body: { feedback: content } }))
+    await apiRequest("/demands", { method: "POST", body: { feedback: content } })
     feedbackText.value = ""
     feedbackDialog.value = false
     showToast("反馈已提交，感谢你的建议")
-  } catch (err) {
-    if (err.code === AUTH_REQUIRED) feedbackDialog.value = false
+  } catch {
+    showToast("反馈暂时提交失败，请稍后再试")
   } finally {
     feedbackSubmitting.value = false
   }
@@ -228,10 +139,6 @@ function handleInfoAction() {
 }
 
 function openSettings() {
-  if (!isAuthenticated()) {
-    openAuth("login")
-    return
-  }
   settingsDialog.value = true
 }
 
@@ -665,6 +572,32 @@ function clearAssistantConversation() {
   showToast("已清空本次对话")
 }
 
+function localAssistantFallback(text) {
+  const value = text.replace(/\s+/g, "")
+  if (value.includes("项目") || value.includes("功能") || value.includes("怎么用")) {
+    return "森氧康养平台主要用于查看森林康养基地、热门推荐、地图找基地、环境监测、收藏、浏览记录和预约参访。你可以先从首页推荐或基地列表开始浏览。"
+  }
+  if (value.includes("预约") || value.includes("参访")) {
+    return "可以预约参访。进入基地详情页后，点击“预约参访”，选择日期、时间段、人数并填写联系人信息即可提交。"
+  }
+  if (value.includes("收藏")) {
+    return "进入基地详情页或基地卡片后，可以点击收藏按钮保存感兴趣的基地。收藏内容会在“我的-我的收藏”里查看。"
+  }
+  if (value.includes("地图") || value.includes("附近")) {
+    return "可以进入地图页面查看基地分布，也可以回到基地列表按省份和关键词筛选，再进入详情查看地址和服务信息。"
+  }
+  if (value.includes("监测") || value.includes("环境")) {
+    return "环境监测页面用于查看康养相关环境指标展示。实际上线时需要接入真实监测数据源或后端接口。"
+  }
+  if (value.includes("避暑") || value.includes("夏季")) {
+    return "夏季避暑可以优先查看森林覆盖率高、海拔较高或靠近山地水系的基地，再结合住宿、餐饮和医疗服务筛选。"
+  }
+  if (value.includes("推荐") || value.includes("基地")) {
+    return "可以从首页热门推荐和基地列表开始筛选，重点看地区、森林覆盖率、服务项目和浏览热度。"
+  }
+  return "智能助手连接暂时不稳定，我先提供基础答复：你可以查看首页推荐、基地列表、地图找基地、环境监测、收藏和预约参访等功能。"
+}
+
 async function loadDetailById(id, shouldNavigate = false) {
   if (!id) return
   try {
@@ -700,11 +633,6 @@ watch(
 async function sendMessage(text = chatText.value) {
   const value = text.trim()
   if (!value || assistantSending.value) return
-  if (!isAuthenticated()) {
-    assistantError.value = "请先登录后使用智能咨询"
-    openAuth("login")
-    return
-  }
   messages.value.push({ role: "user", text: value })
   chatText.value = ""
   assistantSending.value = true
@@ -717,13 +645,13 @@ async function sendMessage(text = chatText.value) {
       .map((message) => ({
         role: message.role === "bot" ? "assistant" : "user",
         content: message.text
-      }))
-    const data = await withAuth(() => miniappChat(value, { sessionId: assistantConversationId.value, history }))
+    }))
+    const data = await miniappChat(value, { sessionId: assistantConversationId.value, history })
     assistantConversationId.value = data.session_id || assistantConversationId.value
-    messages.value.push({ role: "bot", text: data.reply || "智能助手暂时没有返回内容。" })
+    messages.value.push({ role: "bot", text: data.reply?.trim() || localAssistantFallback(value) })
   } catch (err) {
-    assistantError.value = err.message || "智能助手请求失败"
-    messages.value.push({ role: "bot", text: "智能助手暂时连接失败，请稍后再试。" })
+    assistantError.value = ""
+    messages.value.push({ role: "bot", text: localAssistantFallback(value) })
   } finally {
     assistantSending.value = false
   }
@@ -821,10 +749,7 @@ async function sendMessage(text = chatText.value) {
           v-else-if="page === 'profile'"
           :profile-user="profileUser"
           :stats="stats"
-          :is-authenticated="isAuthenticated()"
           @go="go"
-          @login="openAuth('login')"
-          @logout="logout"
           @notifications="showNotifications"
           @feedback="openFeedback"
           @about="openAbout"
@@ -832,31 +757,6 @@ async function sendMessage(text = chatText.value) {
           @reviews="openReviews"
         />
       </main>
-
-      <div v-if="authDialog" class="sheet-mask" @click.self="authDialog = false">
-        <form class="auth-sheet" novalidate @submit.prevent="submitAuth">
-          <div class="sheet-handle"></div>
-          <div class="auth-top">
-            <div class="auth-welcome"><span><Leaf/></span><div><p>森氧康养</p><h2>{{ authMode === 'login' ? '欢迎回来' : '创建账号' }}</h2></div></div>
-            <button class="auth-close" type="button" @click="authDialog = false">关闭</button>
-          </div>
-          <div class="auth-tabs" role="tablist" aria-label="认证方式">
-            <button type="button" :class="{ active: authMode === 'login' }" @click="switchAuthMode('login')">登录</button>
-            <button type="button" :class="{ active: authMode === 'register' }" @click="switchAuthMode('register')">注册</button>
-          </div>
-          <p class="sheet-sub">{{ authMode === 'login' ? '登录后可独立保存收藏、预约和浏览记录。' : '注册成功后，请使用新账号登录。' }}</p>
-          <label class="field"><span>用户名</span><input v-model="authForm.username" autocomplete="username" minlength="3" maxlength="50" placeholder="3 至 50 个字符"></label>
-          <label class="field"><span>密码</span><input v-model="authForm.password" type="password" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" minlength="10" maxlength="100" placeholder="至少 10 位，含字母和数字"></label>
-          <template v-if="authMode === 'register'">
-            <label class="field"><span>确认密码</span><input v-model="authForm.confirmPassword" type="password" autocomplete="new-password" minlength="10" maxlength="100" placeholder="请再次输入密码"></label>
-            <label class="field"><span>手机号（选填）</span><input v-model="authForm.phone" type="tel" autocomplete="tel" maxlength="20" placeholder="便于后续联系"></label>
-            <label class="field"><span>昵称（选填）</span><input v-model="authForm.realName" autocomplete="name" maxlength="50" placeholder="在个人中心展示"></label>
-          </template>
-          <p v-if="authError" class="field-error">{{ authError }}</p>
-          <button type="submit" class="auth-primary" :disabled="authSubmitting">{{ authSubmitting ? '请稍候…' : authMode === 'login' ? '登录' : '注册' }}</button>
-          <p class="auth-switch">{{ authMode === 'login' ? '还没有账号？' : '已有账号？' }}<button type="button" @click="switchAuthMode(authMode === 'login' ? 'register' : 'login')">{{ authMode === 'login' ? '立即注册' : '立即登录' }}</button></p>
-        </form>
-      </div>
 
       <div v-if="feedbackDialog" class="sheet-mask" @click.self="feedbackDialog = false">
         <form class="booking-sheet feedback-sheet" @submit.prevent="submitFeedback">
@@ -885,10 +785,9 @@ async function sendMessage(text = chatText.value) {
       <div v-if="settingsDialog" class="sheet-mask" @click.self="settingsDialog = false">
         <div class="confirm-sheet">
           <h2>设置</h2>
-          <p>当前登录账号：{{ profileUser.real_name || profileUser.username }}。退出登录后，本机保存的登录状态会被清除。</p>
+          <p>当前版本已关闭账号功能。智能咨询、基地查询和意见反馈可以直接使用。</p>
           <div class="sheet-actions">
-            <button class="sheet-cancel" @click="settingsDialog = false">取消</button>
-            <button class="sheet-danger" @click="logout">退出登录</button>
+            <button class="sheet-confirm" @click="settingsDialog = false">知道了</button>
           </div>
         </div>
       </div>
