@@ -58,9 +58,7 @@ const assistantConversationId = ref("")
 const assistantSending = ref(false)
 const assistantError = ref("")
 const messages = ref([
-  { role: "bot", text: "你好！我是森氧康养智能助手，很高兴为你服务。" },
-  { role: "user", text: "推荐适合夏季避暑的基地" },
-  { role: "bot", text: "为你推荐青城山康养基地和庐山康养基地，它们气温舒适、空气质量优秀。" }
+  { role: "bot", text: "你好！我是森氧康养智能助手，很高兴为你服务。" }
 ])
 
 /* ---------- 后端数据：收藏 / 浏览记录 / 预约 ---------- */

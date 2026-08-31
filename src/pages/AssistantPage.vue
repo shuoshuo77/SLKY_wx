@@ -42,14 +42,6 @@ function openDetail(base) {
         <p><LoaderCircle /> 正在思考...</p>
       </div>
       <p v-if="error" class="chat-error">{{ error }}</p>
-      <article v-if="featuredBase" class="recommend-card" @click="openDetail(featuredBase)">
-        <img :src="featuredBase.image" :alt="featuredBase.name">
-        <div>
-          <b>{{ featuredBase.name }}</b>
-          <span>{{ featuredBase.area || '优质森林康养基地' }}</span>
-          <em>{{ featuredBase.reason || `热门浏览 ${featuredBase.viewCount || 0}` }}</em>
-        </div>
-      </article>
     </section>
 
     <div class="quick-prompts">
